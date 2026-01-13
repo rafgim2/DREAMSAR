@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XR AR Video + MIDI Háptica (2 manos)</title>
+<title>XR AR Video + MIDI Háptica (2 manos) + Marco Reactivo</title>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
@@ -30,7 +30,7 @@
 <div id="overlay">
   <div class="card">
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
-    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + vibración 2 manos (MIDI)</p>
+    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + vibración 2 manos (MIDI) + marco reactivo</p>
 
     <button id="start">▶ Iniciar vídeo</button>
     <button id="enterAR" disabled>Entrar en AR</button>
@@ -52,11 +52,11 @@ const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; }
 const MIDI_RIGHT_URL = "./dream14.mid";     // derecha
 const MIDI_LEFT_URL  = "./dream14iz.mid";   // izquierda
 
-// ✅ offsets separados
-const MIDI_OFFSET_RIGHT = 14.5;  // tu ajuste para mano derecha
-const MIDI_OFFSET_LEFT  = 8.5;   // 7s antes => 14.5 - 7 = 7.5
+// ✅ tus offsets actuales
+const MIDI_OFFSET_RIGHT = 14.5;
+const MIDI_OFFSET_LEFT  = 8.5;   // izquierda empieza antes (tu ajuste final)
 
-// ✅ tu intensidad
+// ✅ vibración
 const HAPTIC_INTENSITY = 0.35; // 0..1
 const HAPTIC_DURATION_MS = 18; // ms
 const HAPTIC_WINDOW = 0.020;   // 20ms tolerancia
@@ -111,15 +111,59 @@ video.style.top = "-9999px";
 video.width = 1; video.height = 1;
 document.body.appendChild(video);
 
+video.addEventListener("error", () => {
+  const e = video.error;
+  log("❌ Error video: " + (e ? (e.code + " " + e.message) : "desconocido"));
+});
+
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
+const screenW = 1.6;
+const screenH = 0.9;
+
 const screen = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.6, 0.9),
+  new THREE.PlaneGeometry(screenW, screenH),
   new THREE.MeshBasicMaterial({ map: videoTex, transparent:true })
 );
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
+
+// -------------------- MARCO REACTIVO (mano izquierda) --------------------
+const frameGroup = new THREE.Group();
+frameGroup.position.copy(screen.position);
+frameGroup.rotation.copy(screen.rotation);
+scene.add(frameGroup);
+
+const thickness = 0.03; // grosor marco
+const depth = 0.005;    // profundidad
+const margin = 0.025;   // separación con respecto al vídeo
+
+const frameMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.12, // base
+  metalness: 0.2,
+  roughness: 0.25
+});
+
+function makeBar(w,h,x,y){
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), frameMat);
+  mesh.position.set(x, y, 0.002); // un poco delante
+  frameGroup.add(mesh);
+  return mesh;
+}
+
+const fw = screenW + margin*2;
+const fh = screenH + margin*2;
+
+makeBar(fw, thickness, 0,  fh/2);  // arriba
+makeBar(fw, thickness, 0, -fh/2);  // abajo
+makeBar(thickness, fh,  fw/2, 0);  // derecha
+makeBar(thickness, fh, -fw/2, 0);  // izquierda
+
+let frameEnergy = 0; // 0..1 (acumulada)
+let framePulse  = 0; // 0..1 (latido rápido)
 
 // -------------------- TEXTO: escritura estable --------------------
 const pad = 36, fontPx = 56, lineH = 78;
@@ -128,7 +172,10 @@ let fullLines = [], fullWidths = [], fullText = "";
 let cursor = 0, nextT = 0;
 let prevVideoT = 0;
 
+// ✅ tu altura
 const TEXT_Y = 1.65;
+
+// velocidad del “escrito”
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
 
@@ -322,6 +369,10 @@ function tickHand(times, which, videoTime, midiTime){
         if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
           pulse(leftHaptic);
           lastPulseLeftAt = videoTime;
+
+          // ✅ impulso visual al marco en cada nota izquierda
+          frameEnergy = Math.min(1.0, frameEnergy + 0.35);
+          framePulse  = 1.0;
         }
         leftIdx++;
         continue;
@@ -356,6 +407,7 @@ renderer.setAnimationLoop(()=>{
 
   const t = video.currentTime;
 
+  // cues texto
   while (nextCue < cues.length && t >= cues[nextCue].t){
     setupText(cues[nextCue].text);
     nextCue++;
@@ -366,6 +418,22 @@ renderer.setAnimationLoop(()=>{
   stepType(dt);
 
   tickHaptics(t);
+
+  // -------------------- UPDATE MARCO REACTIVO --------------------
+  // decay suave
+  const decayEnergy = Math.exp(-dt * 6.0);
+  frameEnergy *= decayEnergy;
+
+  // latido rápido
+  const decayPulse = Math.exp(-dt * 14.0);
+  framePulse *= decayPulse;
+
+  // brillo (base + energía)
+  frameMat.emissiveIntensity = 0.12 + frameEnergy * 0.9;
+
+  // micro-zoom
+  const s = 1.0 + framePulse * 0.015;
+  frameGroup.scale.set(s, s, 1.0);
 
   renderer.render(scene, camera);
 });
@@ -413,7 +481,7 @@ btnStart.onclick = async () => {
       rightIdx = resyncIndex(rightTimes, mr);
       leftIdx  = resyncIndex(leftTimes,  ml);
 
-      log("🟣 Háptica 2 manos lista. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
+      log("🟣 Listo. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
     }catch(e){
       log("⚠️ MIDI/háptica no disponibles: " + (e?.message || e));
     }
@@ -451,4 +519,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
