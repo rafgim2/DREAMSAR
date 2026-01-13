@@ -334,15 +334,11 @@ function mapGrips(session){
   controllerRightObj = null;
   controllerLeftObj  = null;
 
-  // solo mandos (tracked-pointer). Ignoramos manos.
   const pointers = [];
   for (const src of session.inputSources){
     if (src.targetRayMode === "tracked-pointer") pointers.push(src);
   }
 
-  // Asumimos que Three asigna grips en el mismo orden que aparecen estos pointers.
-  // Habitualmente 0 y 1 corresponden a los 2 mandos.
-  // Mapeamos por handedness.
   for (let i=0;i<pointers.length;i++){
     const src = pointers[i];
     const obj = (i === 0) ? grip0 : grip1;
@@ -354,11 +350,14 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "⚠️ No detecto mando izquierdo");
 }
 
-// ==================== PARTÍCULAS (VISIBLES SÍ O SÍ) ====================
-const MAX_PARTICLES = 220; // aún ligero
-const P_SPAWN = 3;         // un pelín más para que se vea
-const P_LIFE = 1.2;
+// ==================== PARTÍCULAS (vida + fade out) ====================
+const MAX_PARTICLES = 220;
+const P_SPAWN = 3;
 
+// ✅ MÁS VIDA
+const P_LIFE = 1.9;
+
+// textura sprite
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -388,11 +387,11 @@ const pMat = new THREE.PointsMaterial({
   map: spriteTex,
   transparent: true,
   depthWrite: false,
-  depthTest: false,                 // ✅ clave para que no se “pierdan”
-  blending: THREE.AdditiveBlending, // ✅ atmósfera visible
+  depthTest: false,
+  blending: THREE.AdditiveBlending,
   vertexColors: true,
   opacity: 0.95,
-  size: 0.055,                      // ✅ más grande para Quest
+  size: 0.055,
   sizeAttenuation: true
 });
 
@@ -407,7 +406,7 @@ pGeom.attributes.position.needsUpdate = true;
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
-points.renderOrder = 999; // dibuja “encima”
+points.renderOrder = 999;
 scene.add(points);
 
 let pCursor = 0;
@@ -426,7 +425,7 @@ function spawnParticlesFrom(worldPos, warm){ // warm 0..1
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
     velocity[i*3+0] = (Math.random()-0.5)*0.08;
-    velocity[i*3+1] = 0.22 + Math.random()*0.14; // hacia arriba más claro
+    velocity[i*3+1] = 0.22 + Math.random()*0.14;
     velocity[i*3+2] = (Math.random()-0.5)*0.08;
 
     const b = 0.75 + warm*0.25;
@@ -439,10 +438,13 @@ function spawnParticlesFrom(worldPos, warm){ // warm 0..1
   pGeom.attributes.color.needsUpdate = true;
 }
 
+// ✅ Fade out real: oscurece según life01 (1→0)
 function updateParticles(dt){
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
+
     alive[i] -= dt;
+    const life01 = Math.max(0, alive[i] / P_LIFE);
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
@@ -452,11 +454,19 @@ function updateParticles(dt){
     velocity[i*3+1] *= (1 - dt*0.7);
     velocity[i*3+2] *= (1 - dt*1.1);
 
+    // Fade out (suave)
+    const f = 0.88 + life01 * 0.12;
+    colors[i*3+0] *= f;
+    colors[i*3+1] *= f;
+    colors[i*3+2] *= f;
+
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
     }
   }
+
   pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
 }
 
 // ==================== HÁPTICA + MIDI ====================
@@ -520,7 +530,6 @@ function tickHand(times, which, videoTime, midiTime){
             controllerRightObj.getWorldPosition(tmpV);
             spawnParticlesFrom(tmpV, 0.55);
           } else {
-            // fallback: centro del vídeo (para verificar que se ven)
             screen.getWorldPosition(tmpFallback);
             spawnParticlesFrom(tmpFallback, 0.55);
           }
@@ -598,7 +607,7 @@ renderer.setAnimationLoop(()=>{
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
-  // partículas
+  // partículas (vida + fade)
   updateParticles(dt);
 
   renderer.render(scene, camera);
