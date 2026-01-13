@@ -112,11 +112,6 @@ video.style.top = "-9999px";
 video.width = 1; video.height = 1;
 document.body.appendChild(video);
 
-video.addEventListener("error", () => {
-  const e = video.error;
-  log("❌ Error video: " + (e ? (e.code + " " + e.message) : "desconocido"));
-});
-
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
@@ -136,9 +131,9 @@ frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
 scene.add(frameGroup);
 
-const margin = 0.010; // pegado
-const border = 0.030; // grosor
-const radius = 0.070; // esquinas redondeadas
+const margin = 0.010;
+const border = 0.030;
+const radius = 0.070;
 const zFront = 0.003;
 
 const gradCanvas = document.createElement("canvas");
@@ -146,14 +141,12 @@ gradCanvas.width = 512; gradCanvas.height = 512;
 const gctx = gradCanvas.getContext("2d");
 const gradTex = new THREE.CanvasTexture(gradCanvas);
 gradTex.colorSpace = THREE.SRGBColorSpace;
-gradTex.wrapS = gradTex.wrapT = THREE.ClampToEdgeWrapping;
 gradTex.minFilter = THREE.LinearFilter;
 gradTex.magFilter = THREE.LinearFilter;
 
 function drawGradient(phase, energy){
   gctx.clearRect(0,0,512,512);
   const cx = 256, cy = 256;
-
   const angle = phase * 0.35 + energy * 0.25;
   const dx = Math.cos(angle) * 180;
   const dy = Math.sin(angle) * 180;
@@ -166,17 +159,6 @@ function drawGradient(phase, energy){
 
   gctx.fillStyle = grd;
   gctx.fillRect(0,0,512,512);
-
-  // grano finísimo
-  gctx.globalAlpha = 0.06;
-  for (let i=0;i<350;i++){
-    const x = Math.random()*512, y = Math.random()*512;
-    const r = Math.random()*2.0;
-    gctx.fillStyle = "rgba(255,255,255,0.6)";
-    gctx.beginPath(); gctx.arc(x,y,r,0,Math.PI*2); gctx.fill();
-  }
-  gctx.globalAlpha = 1.0;
-
   gradTex.needsUpdate = true;
 }
 
@@ -205,13 +187,9 @@ const hole  = roundedRectShape(innerW, innerH, Math.max(0.001, radius - border))
 outer.holes.push(hole);
 
 const frameGeo = new THREE.ShapeGeometry(outer);
-const frameMat = new THREE.MeshBasicMaterial({
-  map: gradTex,
-  transparent: true,
-  opacity: 0.85
-});
+const frameMat = new THREE.MeshBasicMaterial({ map: gradTex, transparent:true, opacity:0.85 });
 const frameMesh = new THREE.Mesh(frameGeo, frameMat);
-frameMesh.position.set(0, 0, zFront);
+frameMesh.position.set(0,0,zFront);
 frameGroup.add(frameMesh);
 
 let frameEnergy = 0;
@@ -326,16 +304,13 @@ async function loadMidiLib(){
   MidiLib = await import("https://esm.sh/@tonejs/midi@2.0.28?bundle");
   log("✅ Librería MIDI lista");
 }
-
 async function loadMidiTimes(url){
   await loadMidiLib();
   const { Midi } = MidiLib;
-
   const res = await fetch(url);
   if (!res.ok) throw new Error("No se pudo cargar " + url);
   const ab = await res.arrayBuffer();
   const midi = new Midi(ab);
-
   const times = [];
   for (const track of midi.tracks){
     for (const n of track.notes) times.push(n.time);
@@ -344,39 +319,45 @@ async function loadMidiTimes(url){
   return times;
 }
 
-// ==================== CONTROLLERS (GRIP SPACE) ====================
+// ==================== CONTROLLERS (GRIP 0 y 1 FIJOS) ====================
 let xrSession = null;
 
-// IMPORTANTE: grip tiene pose real del mando
+const grip0 = renderer.xr.getControllerGrip(0);
+const grip1 = renderer.xr.getControllerGrip(1);
+scene.add(grip0);
+scene.add(grip1);
+
 let controllerRightObj = null;
 let controllerLeftObj  = null;
 
-function remapControllers(session){
+function mapGrips(session){
   controllerRightObj = null;
   controllerLeftObj  = null;
 
-  for (let i = 0; i < session.inputSources.length; i++){
-    const src = session.inputSources[i];
-    if (!src.gamepad) continue;
-
-    if (src.handedness === "right"){
-      controllerRightObj = renderer.xr.getControllerGrip(i);
-      scene.add(controllerRightObj);
-    }
-    if (src.handedness === "left"){
-      controllerLeftObj = renderer.xr.getControllerGrip(i);
-      scene.add(controllerLeftObj);
-    }
+  // solo mandos (tracked-pointer). Ignoramos manos.
+  const pointers = [];
+  for (const src of session.inputSources){
+    if (src.targetRayMode === "tracked-pointer") pointers.push(src);
   }
 
-  log(controllerRightObj ? "🎮 Mando derecho OK" : "⚠️ No mando derecho");
-  log(controllerLeftObj  ? "🎮 Mando izquierdo OK" : "⚠️ No mando izquierdo");
+  // Asumimos que Three asigna grips en el mismo orden que aparecen estos pointers.
+  // Habitualmente 0 y 1 corresponden a los 2 mandos.
+  // Mapeamos por handedness.
+  for (let i=0;i<pointers.length;i++){
+    const src = pointers[i];
+    const obj = (i === 0) ? grip0 : grip1;
+    if (src.handedness === "right") controllerRightObj = obj;
+    if (src.handedness === "left")  controllerLeftObj  = obj;
+  }
+
+  log(controllerRightObj ? "🎮 Mando derecho mapeado" : "⚠️ No detecto mando derecho");
+  log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "⚠️ No detecto mando izquierdo");
 }
 
-// ==================== PARTÍCULAS (pool ligero) ====================
-const MAX_PARTICLES = 160;
-const P_SPAWN = 2;     // sutil
-const P_LIFE = 1.15;   // atmósfera
+// ==================== PARTÍCULAS (VISIBLES SÍ O SÍ) ====================
+const MAX_PARTICLES = 220; // aún ligero
+const P_SPAWN = 3;         // un pelín más para que se vea
+const P_LIFE = 1.2;
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
@@ -407,9 +388,11 @@ const pMat = new THREE.PointsMaterial({
   map: spriteTex,
   transparent: true,
   depthWrite: false,
+  depthTest: false,                 // ✅ clave para que no se “pierdan”
+  blending: THREE.AdditiveBlending, // ✅ atmósfera visible
   vertexColors: true,
-  opacity: 0.75,
-  size: 0.03,
+  opacity: 0.95,
+  size: 0.055,                      // ✅ más grande para Quest
   sizeAttenuation: true
 });
 
@@ -423,10 +406,13 @@ for (let i=0;i<MAX_PARTICLES;i++){
 pGeom.attributes.position.needsUpdate = true;
 
 const points = new THREE.Points(pGeom, pMat);
+points.frustumCulled = false;
+points.renderOrder = 999; // dibuja “encima”
 scene.add(points);
 
 let pCursor = 0;
 const tmpV = new THREE.Vector3();
+const tmpFallback = new THREE.Vector3();
 
 function spawnParticlesFrom(worldPos, warm){ // warm 0..1
   for (let k=0;k<P_SPAWN;k++){
@@ -435,20 +421,18 @@ function spawnParticlesFrom(worldPos, warm){ // warm 0..1
 
     alive[i] = P_LIFE;
 
-    positions[i*3+0] = worldPos.x + (Math.random()-0.5)*0.03;
-    positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.03;
-    positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.03;
+    positions[i*3+0] = worldPos.x + (Math.random()-0.5)*0.04;
+    positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.04;
+    positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
-    // suave hacia arriba
-    velocity[i*3+0] = (Math.random()-0.5)*0.06;
-    velocity[i*3+1] = 0.16 + Math.random()*0.10;
-    velocity[i*3+2] = (Math.random()-0.5)*0.06;
+    velocity[i*3+0] = (Math.random()-0.5)*0.08;
+    velocity[i*3+1] = 0.22 + Math.random()*0.14; // hacia arriba más claro
+    velocity[i*3+2] = (Math.random()-0.5)*0.08;
 
-    // color cálido sutil
-    const b = 0.65 + warm*0.35;
+    const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.65 + 0.25*Math.random()) * b;
-    colors[i*3+2] = (0.18 + 0.12*Math.random()) * b;
+    colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
+    colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
   }
 
   pGeom.attributes.position.needsUpdate = true;
@@ -464,10 +448,9 @@ function updateParticles(dt){
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    // fricción suave
-    velocity[i*3+0] *= (1 - dt*1.2);
-    velocity[i*3+1] *= (1 - dt*0.8);
-    velocity[i*3+2] *= (1 - dt*1.2);
+    velocity[i*3+0] *= (1 - dt*1.1);
+    velocity[i*3+1] *= (1 - dt*0.7);
+    velocity[i*3+2] *= (1 - dt*1.1);
 
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
@@ -476,7 +459,7 @@ function updateParticles(dt){
   pGeom.attributes.position.needsUpdate = true;
 }
 
-// ==================== HÁPTICA ====================
+// ==================== HÁPTICA + MIDI ====================
 let rightHaptic = null;
 let leftHaptic = null;
 
@@ -536,6 +519,10 @@ function tickHand(times, which, videoTime, midiTime){
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpV);
             spawnParticlesFrom(tmpV, 0.55);
+          } else {
+            // fallback: centro del vídeo (para verificar que se ven)
+            screen.getWorldPosition(tmpFallback);
+            spawnParticlesFrom(tmpFallback, 0.55);
           }
         }
         rightIdx++;
@@ -556,7 +543,10 @@ function tickHand(times, which, videoTime, midiTime){
 
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpV);
-            spawnParticlesFrom(tmpV, 0.9);
+            spawnParticlesFrom(tmpV, 0.90);
+          } else {
+            screen.getWorldPosition(tmpFallback);
+            spawnParticlesFrom(tmpFallback, 0.90);
           }
         }
         leftIdx++;
@@ -626,11 +616,11 @@ async function enter(mode){
   xrSession = s;
   renderer.xr.setSession(s);
 
-  remapControllers(s);
+  mapGrips(s);
   updateHaptics(s);
 
   s.addEventListener("inputsourceschange", () => {
-    remapControllers(s);
+    mapGrips(s);
     updateHaptics(s);
   });
 
@@ -642,8 +632,6 @@ btnStart.onclick = async () => {
     loadPristinaFontNonBlocking();
     drawGradient(0, 0);
 
-    video.muted = false;
-    video.volume = 1.0;
     await video.play();
     log("▶ Vídeo iniciado (con sonido)");
 
