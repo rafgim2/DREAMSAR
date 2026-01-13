@@ -52,11 +52,9 @@ const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; }
 const MIDI_RIGHT_URL = "./dream14.mid";
 const MIDI_LEFT_URL  = "./dream14iz.mid";
 
-// offsets finales (los tuyos)
 const MIDI_OFFSET_RIGHT = 14.5;
 const MIDI_OFFSET_LEFT  = 8.5;
 
-// vibración
 const HAPTIC_INTENSITY = 0.35;
 const HAPTIC_DURATION_MS = 18;
 const HAPTIC_WINDOW = 0.020;
@@ -72,9 +70,7 @@ function loadPristinaFontNonBlocking(){
       FONT_READY = true;
       log("✅ Fuente PRISTINA cargada");
     }).catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
-  }catch{
-    log("⚠️ FontFace no disponible (fallback)");
-  }
+  }catch{ log("⚠️ FontFace no disponible (fallback)"); }
 }
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
@@ -91,7 +87,6 @@ scene.background = null;
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 50);
 camera.position.set(0, 1.6, 2);
 
-// luz suave
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 
 // ==================== VIDEO + AUDIO ====================
@@ -125,7 +120,7 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
-// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
+// ==================== MARCO REDONDEADO GRADIENTE ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
@@ -350,14 +345,17 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "⚠️ No detecto mando izquierdo");
 }
 
-// ==================== PARTÍCULAS (fade por “transparencia” visual) ====================
-const MAX_PARTICLES = 260;
+// ==================== PARTÍCULAS (Shader: alpha real, sin negro) ====================
+const MAX_PARTICLES = 320;
 const P_SPAWN = 3;
 
-// ✅ MÁS VIDA (mucho más)
-const P_LIFE = 3.2;
+// ✅ más vida
+const P_LIFE = 4.0;
 
-// textura sprite
+// tamaño base (en pixels aprox; el shader lo ajusta con distancia)
+const P_SIZE = 14.0;
+
+// textura sprite (alpha suave)
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -370,43 +368,83 @@ function makeSpriteTexture(){
   cx.fillRect(0,0,64,64);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 const spriteTex = makeSpriteTexture();
 
+// buffers
 const positions  = new Float32Array(MAX_PARTICLES * 3);
 const colors     = new Float32Array(MAX_PARTICLES * 3);
-const baseColors = new Float32Array(MAX_PARTICLES * 3); // ✅ guardamos color original para fade limpio
+const alphas     = new Float32Array(MAX_PARTICLES);
 const alive      = new Float32Array(MAX_PARTICLES);
 const velocity   = new Float32Array(MAX_PARTICLES * 3);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
+pGeom.setAttribute("alpha",    new THREE.BufferAttribute(alphas, 1));
 
-const pMat = new THREE.PointsMaterial({
-  map: spriteTex,
-  transparent: true,
-  depthWrite: false,
-  depthTest: false,
-  blending: THREE.AdditiveBlending,
-  vertexColors: true,
-  opacity: 0.95,         // global
-  size: 0.055,
-  sizeAttenuation: true
-});
-
+// init
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
   positions[i*3+0] = 0;
   positions[i*3+1] = -999;
   positions[i*3+2] = 0;
-
-  colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
-  baseColors[i*3+0] = 0; baseColors[i*3+1] = 0; baseColors[i*3+2] = 0;
+  colors[i*3+0] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
+  alphas[i] = 0;
 }
-pGeom.attributes.position.needsUpdate = true;
-pGeom.attributes.color.needsUpdate = true;
+
+// ShaderMaterial para alpha por partícula
+const pMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uMap: { value: spriteTex },
+    uSize: { value: P_SIZE }
+  },
+  vertexShader: `
+    attribute float alpha;
+    varying vec3 vColor;
+    varying float vAlpha;
+
+    uniform float uSize;
+
+    void main(){
+      vColor = color;
+      vAlpha = alpha;
+
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+
+      // tamaño con atenuación por distancia (estable en Quest)
+      float dist = max(0.6, -mv.z);
+      gl_PointSize = uSize * (1.2 / dist) * 120.0;
+      gl_PointSize = clamp(gl_PointSize, 2.0, 64.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D uMap;
+    varying vec3 vColor;
+    varying float vAlpha;
+
+    void main(){
+      vec4 tex = texture2D(uMap, gl_PointCoord);
+
+      // alpha real (fade-out real), sin oscurecer passthrough
+      float a = tex.a * vAlpha;
+
+      // si está casi muerto, descartamos para que no quede "resto"
+      if (a < 0.01) discard;
+
+      // aditivo: color * alpha
+      gl_FragColor = vec4(vColor * a, a);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: THREE.AdditiveBlending
+});
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -417,7 +455,7 @@ let pCursor = 0;
 const tmpV = new THREE.Vector3();
 const tmpFallback = new THREE.Vector3();
 
-function spawnParticlesFrom(worldPos, warm){ // warm 0..1
+function spawnParticlesFrom(worldPos, warm){
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
@@ -428,72 +466,54 @@ function spawnParticlesFrom(worldPos, warm){ // warm 0..1
     positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.04;
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
-    // Movimiento MUY suave (más “atmósfera”)
     velocity[i*3+0] = (Math.random()-0.5)*0.06;
-    velocity[i*3+1] = 0.16 + Math.random()*0.10; // suben lento
+    velocity[i*3+1] = 0.12 + Math.random()*0.08;  // más lento = atmósfera
     velocity[i*3+2] = (Math.random()-0.5)*0.06;
 
-    // color cálido (y guardamos baseColor)
-    const b = 0.75 + warm*0.25;
-    const r = 1.0 * b;
-    const g = (0.55 + 0.35*Math.random()) * b;
-    const bl = (0.12 + 0.14*Math.random()) * b;
+    const b = 0.80 + warm*0.20;
+    colors[i*3+0] = 1.0 * b;
+    colors[i*3+1] = (0.60 + 0.30*Math.random()) * b;
+    colors[i*3+2] = (0.14 + 0.12*Math.random()) * b;
 
-    baseColors[i*3+0] = r;
-    baseColors[i*3+1] = g;
-    baseColors[i*3+2] = bl;
-
-    // al nacer: visibles
-    colors[i*3+0] = r;
-    colors[i*3+1] = g;
-    colors[i*3+2] = bl;
+    alphas[i] = 1.0;
   }
 
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.color.needsUpdate = true;
+  pGeom.attributes.alpha.needsUpdate = true;
 }
 
-// ✅ Fade-out “transparente” en passthrough:
-// en PointsMaterial no hay alpha por vértice, así que hacemos el fade
-// escalando el BRILLO hacia 0 (equivale visualmente a transparencia con AdditiveBlending).
 function updateParticles(dt){
-  let anyAlive = false;
+  let any = false;
 
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
-    anyAlive = true;
+    any = true;
 
     alive[i] -= dt;
-    const life01 = Math.max(0, alive[i] / P_LIFE); // 1 → 0
+    const life01 = Math.max(0, alive[i] / P_LIFE); // 1->0
 
-    // curva suave (desaparece despacio al final)
-    const a = life01 * life01; // easeOut
+    // fade-out suave (desaparece por transparencia real)
+    const a = life01 * life01 * life01; // más suave al final
+    alphas[i] = a;
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    // fricción + “flotación”
-    velocity[i*3+0] *= (1 - dt*0.9);
-    velocity[i*3+1] *= (1 - dt*0.5);
-    velocity[i*3+2] *= (1 - dt*0.9);
+    velocity[i*3+0] *= (1 - dt*0.8);
+    velocity[i*3+1] *= (1 - dt*0.4);
+    velocity[i*3+2] *= (1 - dt*0.8);
 
-    // ✅ Fade real: volvemos a calcular el color desde baseColor * a
-    colors[i*3+0] = baseColors[i*3+0] * a;
-    colors[i*3+1] = baseColors[i*3+1] * a;
-    colors[i*3+2] = baseColors[i*3+2] * a;
-
-    // cuando muere, ya está prácticamente a 0, así que el “salto” no se nota
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
-      colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
-      baseColors[i*3+0] = 0; baseColors[i*3+1] = 0; baseColors[i*3+2] = 0;
+      alphas[i] = 0;
     }
   }
 
-  if (anyAlive){
+  if (any){
     pGeom.attributes.position.needsUpdate = true;
-    pGeom.attributes.color.needsUpdate = true;
+    pGeom.attributes.alpha.needsUpdate = true;
   }
 }
 
@@ -549,6 +569,7 @@ function tickHand(times, which, videoTime, midiTime){
     while (rightIdx < times.length){
       const nt = times[rightIdx];
       const diff = nt - midiTime;
+
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseRightAt > MIN_PULSE_GAP){
           pulse(rightHaptic);
@@ -571,6 +592,7 @@ function tickHand(times, which, videoTime, midiTime){
     while (leftIdx < times.length){
       const nt = times[leftIdx];
       const diff = nt - midiTime;
+
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
           pulse(leftHaptic);
@@ -625,17 +647,15 @@ renderer.setAnimationLoop(()=>{
 
   const dt = Math.max(0, t - prevVideoT);
   prevVideoT = t;
-  stepType(dt);
 
+  stepType(dt);
   tickHaptics(t);
 
-  // marco gradiente sutil
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
-  // partículas (vida + fade “transparente”)
   updateParticles(dt);
 
   renderer.render(scene, camera);
