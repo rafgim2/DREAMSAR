@@ -52,9 +52,11 @@ const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; }
 const MIDI_RIGHT_URL = "./dream14.mid";
 const MIDI_LEFT_URL  = "./dream14iz.mid";
 
+// offsets finales (los tuyos)
 const MIDI_OFFSET_RIGHT = 14.5;
 const MIDI_OFFSET_LEFT  = 8.5;
 
+// vibración
 const HAPTIC_INTENSITY = 0.35;
 const HAPTIC_DURATION_MS = 18;
 const HAPTIC_WINDOW = 0.020;
@@ -70,7 +72,9 @@ function loadPristinaFontNonBlocking(){
       FONT_READY = true;
       log("✅ Fuente PRISTINA cargada");
     }).catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
-  }catch{ log("⚠️ FontFace no disponible (fallback)"); }
+  }catch{
+    log("⚠️ FontFace no disponible (fallback)");
+  }
 }
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
@@ -87,6 +91,7 @@ scene.background = null;
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 50);
 camera.position.set(0, 1.6, 2);
 
+// luz suave
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 
 // ==================== VIDEO + AUDIO ====================
@@ -120,7 +125,7 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
-// ==================== MARCO REDONDEADO GRADIENTE ====================
+// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
@@ -345,17 +350,14 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "⚠️ No detecto mando izquierdo");
 }
 
-// ==================== PARTÍCULAS (Shader: alpha real, corregido para Quest) ====================
-const MAX_PARTICLES = 320;
+// ==================== PARTÍCULAS (vida + fade out) ====================
+const MAX_PARTICLES = 220;
 const P_SPAWN = 3;
 
-// ✅ más vida
-const P_LIFE = 4.5;
+// ✅ MÁS VIDA
+const P_LIFE = 1.9;
 
-// tamaño base en “px lógicos”
-const P_SIZE = 18.0;
-
-// sprite (alpha suave)
+// textura sprite
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -368,83 +370,39 @@ function makeSpriteTexture(){
   cx.fillRect(0,0,64,64);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 const spriteTex = makeSpriteTexture();
 
-// buffers
-const positions  = new Float32Array(MAX_PARTICLES * 3);
-const colors     = new Float32Array(MAX_PARTICLES * 3);
-const alphas     = new Float32Array(MAX_PARTICLES);
-const alive      = new Float32Array(MAX_PARTICLES);
-const velocity   = new Float32Array(MAX_PARTICLES * 3);
+const positions = new Float32Array(MAX_PARTICLES * 3);
+const colors    = new Float32Array(MAX_PARTICLES * 3);
+const alive     = new Float32Array(MAX_PARTICLES);
+const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
-pGeom.setAttribute("alpha",    new THREE.BufferAttribute(alphas, 1));
 
-// init
+const pMat = new THREE.PointsMaterial({
+  map: spriteTex,
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: THREE.AdditiveBlending,
+  vertexColors: true,
+  opacity: 0.95,
+  size: 0.055,
+  sizeAttenuation: true
+});
+
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
   positions[i*3+0] = 0;
   positions[i*3+1] = -999;
   positions[i*3+2] = 0;
   colors[i*3+0] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
-  alphas[i] = 0;
 }
-
-// ShaderMaterial (corregido)
-const pMat = new THREE.ShaderMaterial({
-  uniforms: {
-    uMap:  { value: spriteTex },
-    uSize: { value: P_SIZE }
-  },
-  vertexShader: `
-    attribute float alpha;
-    varying vec3 vColor;
-    varying float vAlpha;
-
-    uniform float uSize;
-
-    void main(){
-      vColor = color;
-      vAlpha = alpha;
-
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mv;
-
-      // ✅ CORRECCIÓN QUEST:
-      // tamaño simple con atenuación por distancia, sin multiplicadores bestias
-      float dist = max(0.6, -mv.z);
-      gl_PointSize = uSize * (1.0 / dist);
-      gl_PointSize = clamp(gl_PointSize, 6.0, 28.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D uMap;
-    varying vec3 vColor;
-    varying float vAlpha;
-
-    void main(){
-      vec4 tex = texture2D(uMap, gl_PointCoord);
-
-      float a = tex.a * vAlpha;
-
-      // ✅ menos agresivo para Quest (no desaparece de golpe)
-      if (a < 0.002) discard;
-
-      // aditivo: brillo sin ensuciar passthrough
-      gl_FragColor = vec4(vColor * a, a);
-    }
-  `,
-  transparent: true,
-  depthWrite: false,
-  depthTest: false,
-  blending: THREE.AdditiveBlending
-});
+pGeom.attributes.position.needsUpdate = true;
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -455,7 +413,7 @@ let pCursor = 0;
 const tmpV = new THREE.Vector3();
 const tmpFallback = new THREE.Vector3();
 
-function spawnParticlesFrom(worldPos, warm){
+function spawnParticlesFrom(worldPos, warm){ // warm 0..1
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
@@ -466,54 +424,49 @@ function spawnParticlesFrom(worldPos, warm){
     positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.04;
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
-    velocity[i*3+0] = (Math.random()-0.5)*0.06;
-    velocity[i*3+1] = 0.12 + Math.random()*0.08;
-    velocity[i*3+2] = (Math.random()-0.5)*0.06;
+    velocity[i*3+0] = (Math.random()-0.5)*0.08;
+    velocity[i*3+1] = 0.22 + Math.random()*0.14;
+    velocity[i*3+2] = (Math.random()-0.5)*0.08;
 
-    const b = 0.80 + warm*0.20;
+    const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.60 + 0.30*Math.random()) * b;
-    colors[i*3+2] = (0.14 + 0.12*Math.random()) * b;
-
-    alphas[i] = 1.0;
+    colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
+    colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
   }
 
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.color.needsUpdate = true;
-  pGeom.attributes.alpha.needsUpdate = true;
 }
 
+// ✅ Fade out real: oscurece según life01 (1→0)
 function updateParticles(dt){
-  let any = false;
-
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
-    any = true;
 
     alive[i] -= dt;
-    const life01 = Math.max(0, alive[i] / P_LIFE); // 1->0
-
-    // fade-out por alpha real
-    alphas[i] = life01 * life01 * life01;
+    const life01 = Math.max(0, alive[i] / P_LIFE);
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    velocity[i*3+0] *= (1 - dt*0.8);
-    velocity[i*3+1] *= (1 - dt*0.4);
-    velocity[i*3+2] *= (1 - dt*0.8);
+    velocity[i*3+0] *= (1 - dt*1.1);
+    velocity[i*3+1] *= (1 - dt*0.7);
+    velocity[i*3+2] *= (1 - dt*1.1);
+
+    // Fade out (suave)
+    const f = 0.88 + life01 * 0.12;
+    colors[i*3+0] *= f;
+    colors[i*3+1] *= f;
+    colors[i*3+2] *= f;
 
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
-      alphas[i] = 0;
     }
   }
 
-  if (any){
-    pGeom.attributes.position.needsUpdate = true;
-    pGeom.attributes.alpha.needsUpdate = true;
-  }
+  pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
 }
 
 // ==================== HÁPTICA + MIDI ====================
@@ -568,7 +521,6 @@ function tickHand(times, which, videoTime, midiTime){
     while (rightIdx < times.length){
       const nt = times[rightIdx];
       const diff = nt - midiTime;
-
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseRightAt > MIN_PULSE_GAP){
           pulse(rightHaptic);
@@ -591,7 +543,6 @@ function tickHand(times, which, videoTime, midiTime){
     while (leftIdx < times.length){
       const nt = times[leftIdx];
       const diff = nt - midiTime;
-
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
           pulse(leftHaptic);
@@ -646,15 +597,17 @@ renderer.setAnimationLoop(()=>{
 
   const dt = Math.max(0, t - prevVideoT);
   prevVideoT = t;
-
   stepType(dt);
+
   tickHaptics(t);
 
+  // marco gradiente sutil
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
+  // partículas (vida + fade)
   updateParticles(dt);
 
   renderer.render(scene, camera);
@@ -724,7 +677,8 @@ btnAR.onclick = async () => {
     if (!ok) throw new Error("immersive-ar no soportado");
     await enter("immersive-ar");
   }catch(e){
-    log("❌ AR: " + (e?.message || e)); }
+    log("❌ AR: " + (e?.message || e));
+  }
 };
 
 btnVR.onclick = async () => {
