@@ -1,463 +1,453 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>DREAM AR</title>
-  <style>
-    html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-    #ui {
-      position: fixed; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      pointer-events: none;
-    }
-    #btn {
-      pointer-events: auto;
-      padding: 16px 22px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(20,20,20,0.75);
-      color: #fff;
-      font-size: 16px;
-      cursor: pointer;
-      backdrop-filter: blur(8px);
-    }
-    #hint {
-      position: fixed;
-      left: 0; right: 0; bottom: 14px;
-      text-align: center;
-      color: rgba(255,255,255,0.75);
-      font-size: 13px;
-      pointer-events: none;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XR AR Video + MIDI Háptica (2 manos)</title>
+
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
+  #overlay{
+    position:fixed;inset:0;display:grid;place-items:center;
+    background:rgba(0,0,0,.85);color:#fff;z-index:10;text-align:center;padding:24px;
+  }
+  .card{
+    background:rgba(255,255,255,.08);
+    padding:20px;border-radius:18px;
+    max-width:820px;width:100%;
+  }
+  button{
+    padding:14px 18px;border-radius:14px;
+    border:1px solid rgba(255,255,255,.2);
+    background:rgba(255,255,255,.12);
+    color:#fff;cursor:pointer;margin:6px;
+  }
+  .small{opacity:.75;font-size:14px;margin-top:10px;text-align:left;white-space:pre-wrap}
+</style>
 </head>
 
 <body>
-  <div id="ui">
-    <button id="btn">Entrar en AR</button>
+<div id="overlay">
+  <div class="card">
+    <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
+    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + vibración 2 manos (MIDI)</p>
+
+    <button id="start">▶ Iniciar vídeo</button>
+    <button id="enterAR" disabled>Entrar en AR</button>
+    <button id="enterVR" disabled>Entrar en VR</button>
+
+    <div class="small" id="log"></div>
   </div>
-  <div id="hint">Si no aparece passthrough, revisa permisos de cámara y que el navegador sea el de Quest.</div>
+</div>
 
-  <script type="module">
-    // =========================
-    // CONFIG
-    // =========================
-    // Pega aquí tu vídeo (R2 público / CDN). Debe permitir CORS.
-    const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/dreamurl3.mp4";
+<script type="module">
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+import { VIDEO_URL, CUES } from "./cues.js";
 
-    // MIDI en la raíz del repo
-    const MIDI_RIGHT_URL = "./dream14.mid";
-    const MIDI_LEFT_URL  = "./dream14iz.mid";
+const overlay = document.getElementById("overlay");
+const logEl = document.getElementById("log");
+const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; };
 
-    // Offsets independientes
-    const RIGHT_HAND_OFFSET = 14.5; // mano derecha
-    const LEFT_HAND_OFFSET  = 7.5;  // 14.5 - 7 = 7.5 (mano izquierda empieza 7s antes)
+// -------------------- CONFIG MIDI/HÁPTICA --------------------
+const MIDI_RIGHT_URL = "./dream14.mid";     // derecha
+const MIDI_LEFT_URL  = "./dream14iz.mid";   // izquierda
 
-    // Háptica
-    const HAPTIC_INTENSITY_RIGHT = 0.35;
-    const HAPTIC_INTENSITY_LEFT  = 0.35;
-    const HAPTIC_DURATION_MS = 35; // sutil
+// ✅ offsets separados
+const MIDI_OFFSET_RIGHT = 14.5;  // tu ajuste para mano derecha
+const MIDI_OFFSET_LEFT  = 7.5;   // 7s antes => 14.5 - 7 = 7.5
 
-    // Colocación (en metros) — tú ya querías letras a 1.65
-    const PANEL_DISTANCE = 0.95;  // más cerca
-    const PANEL_Y = 1.35;
-    const TEXT_Y  = 1.65;
+// ✅ tu intensidad
+const HAPTIC_INTENSITY = 0.35; // 0..1
+const HAPTIC_DURATION_MS = 18; // ms
+const HAPTIC_WINDOW = 0.020;   // 20ms tolerancia
+const MIN_PULSE_GAP = 0.010;   // evita spam
 
-    // Texto: usa cues.js (en la raíz)
-    // Formato esperado: export const CUES = [{ t: 0, text: "..." }, ...]
-    // t en segundos RELATIVO al inicio del vídeo (sin contar offsets MIDI).
-    import { CUES } from "./cues.js";
+// -------------------- FUENTE PRISTINA (no bloqueante) --------------------
+let FONT_READY = false;
+function loadPristinaFontNonBlocking(){
+  try{
+    const f = new FontFace("PristinaAR","url(./PRISTINA.TTF)");
+    f.load().then(() => {
+      document.fonts.add(f);
+      FONT_READY = true;
+      log("✅ Fuente PRISTINA cargada");
+    }).catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
+  }catch{
+    log("⚠️ FontFace no disponible (fallback)");
+  }
+}
+const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
-    // =========================
-    // Imports (Three + WebXR + MIDI)
-    // =========================
-    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-    import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/VRButton.js";
-    import { ARButton } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js";
-    import { FontLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/FontLoader.js";
-    import { TextGeometry } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/geometries/TextGeometry.js";
+// -------------------- THREE / XR --------------------
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-    // MIDI parser (Tonejs Midi como módulo)
-    import { Midi } from "https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/dist/Midi.js";
+const scene = new THREE.Scene();
+scene.background = null;
 
-    // =========================
-    // THREE setup
-    // =========================
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 50);
+camera.position.set(0, 1.6, 2);
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 
-    // Luz suave para texto (aunque sea AR)
-    const light = new THREE.DirectionalLight(0xffffff, 1.0);
-    light.position.set(1, 2, 1);
-    scene.add(light);
+// -------------------- VIDEO + AUDIO --------------------
+const video = document.createElement("video");
+video.src = VIDEO_URL;
+video.crossOrigin = "anonymous";
+video.loop = true;
+video.preload = "auto";
+video.playsInline = true;
+video.setAttribute("playsinline","");
+video.setAttribute("webkit-playsinline","");
+video.muted = false;
+video.volume = 1.0;
 
-    // =========================
-    // VIDEO
-    // =========================
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
-    video.playsInline = true;
-    video.preload = "auto";
-    video.loop = true;
-    video.muted = false;        // queremos audio
-    video.src = VIDEO_URL;
+video.style.position = "fixed";
+video.style.left = "-9999px";
+video.style.top = "-9999px";
+video.width = 1; video.height = 1;
+document.body.appendChild(video);
 
-    const videoTex = new THREE.VideoTexture(video);
-    videoTex.colorSpace = THREE.SRGBColorSpace;
+const videoTex = new THREE.VideoTexture(video);
+videoTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Plano de vídeo
-    const videoMat = new THREE.MeshBasicMaterial({ map: videoTex, transparent: true });
-    const videoGeo = new THREE.PlaneGeometry(1.35, 0.76); // 16:9 aprox
-    const videoMesh = new THREE.Mesh(videoGeo, videoMat);
-    scene.add(videoMesh);
+const screen = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.6, 0.9),
+  new THREE.MeshBasicMaterial({ map: videoTex, transparent:true })
+);
+screen.position.set(0, 1.55, -1.35);
+scene.add(screen);
 
-    // =========================
-    // TEXTO (canvas texture para efecto "mano" sin recolocar)
-    // =========================
-    const textCanvas = document.createElement("canvas");
-    textCanvas.width = 2048;
-    textCanvas.height = 1024;
-    const ctx = textCanvas.getContext("2d", { alpha: true });
+// -------------------- TEXTO: escritura estable --------------------
+const pad = 36, fontPx = 56, lineH = 78;
+let canvas, ctx, texture, plane;
+let fullLines = [], fullWidths = [], fullText = "";
+let cursor = 0, nextT = 0;
+let prevVideoT = 0;
 
-    const textTex = new THREE.CanvasTexture(textCanvas);
-    textTex.colorSpace = THREE.SRGBColorSpace;
+const TEXT_Y = 1.65;
+const TYPE_CPS_MIN = 8;
+const TYPE_CPS_MAX = 14;
 
-    const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true });
-    const textGeo = new THREE.PlaneGeometry(1.6, 0.8);
-    const textMesh = new THREE.Mesh(textGeo, textMat);
-    scene.add(textMesh);
+function setupText(lines){
+  fullLines = Array.isArray(lines) ? lines : [String(lines)];
 
-    // Pre-cálculo de layout (para que NO “salte” al escribir)
-    let currentCueIndex = -1;
-    let currentFullText = "";
-    let lines = [];
-    let totalChars = 0;
-    let revealedChars = 0;
-    let typingActive = false;
+  const mctx = document.createElement("canvas").getContext("2d");
+  mctx.font = `${fontPx}px ${fontName()}`;
+  fullWidths = fullLines.map(l => mctx.measureText(l).width);
 
-    // Carga de la fuente TTF (para canvas)
-    const fontFace = new FontFace("Pristina", "url(./PRISTINA.TTF)");
-    await fontFace.load();
-    document.fonts.add(fontFace);
+  const w = Math.ceil(Math.max(...fullWidths) + pad*2);
+  const h = Math.ceil(fullLines.length * lineH + pad*2);
 
-    function wrapTextToLines(text, maxWidthPx, font) {
-      ctx.font = font;
-      const words = text.replace(/\r/g, "").split(/\s+/);
-      const out = [];
-      let line = "";
+  canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  ctx = canvas.getContext("2d");
 
-      for (const w of words) {
-        const test = line ? (line + " " + w) : w;
-        if (ctx.measureText(test).width <= maxWidthPx) {
-          line = test;
-        } else {
-          if (line) out.push(line);
-          line = w;
+  texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+
+  if (plane){
+    plane.material.dispose();
+    plane.geometry.dispose();
+    scene.remove(plane);
+  }
+
+  const aspect = w / h;
+  const physicalH = 0.30;
+  const physicalW = physicalH * aspect;
+
+  plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(physicalW, physicalH),
+    new THREE.MeshBasicMaterial({ map: texture, transparent:true, depthWrite:false })
+  );
+  plane.position.set(0, TEXT_Y, -1.05);
+  scene.add(plane);
+
+  fullText = fullLines.join("\n");
+  cursor = 0;
+  nextT = 0;
+  draw(0);
+}
+
+function draw(chars){
+  if (!ctx) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = `${fontPx}px ${fontName()}`;
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 20;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const visible = fullText.slice(0, chars).split("\n");
+  const cx = canvas.width / 2;
+  let y = pad + lineH/2;
+
+  for (let i=0;i<fullLines.length;i++){
+    const full = fullLines[i];
+    const vis  = visible[i] || "";
+    const left = cx - fullWidths[i]/2;
+    const vw   = ctx.measureText(vis).width;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, y - lineH/2, vw, lineH);
+    ctx.clip();
+    ctx.fillText(full, cx, y);
+    ctx.restore();
+
+    y += lineH;
+  }
+
+  texture.needsUpdate = true;
+}
+
+function randomCps(){
+  return TYPE_CPS_MIN + Math.random() * (TYPE_CPS_MAX - TYPE_CPS_MIN);
+}
+
+function stepType(dt){
+  if (!fullText || cursor >= fullText.length) return;
+  nextT -= dt;
+  while (nextT <= 0 && cursor < fullText.length){
+    cursor++;
+    draw(cursor);
+    nextT += 1 / randomCps();
+  }
+}
+
+// -------------------- CUES --------------------
+const cues = [...CUES].sort((a,b)=>a.t-b.t);
+let nextCue = 0;
+
+// -------------------- MIDI LIB + CARGA --------------------
+let MidiLib = null;
+async function loadMidiLib(){
+  if (MidiLib) return;
+  log("⏳ Cargando librería MIDI…");
+  MidiLib = await import("https://esm.sh/@tonejs/midi@2.0.28?bundle");
+  log("✅ Librería MIDI lista");
+}
+
+async function loadMidiTimes(url){
+  await loadMidiLib();
+  const { Midi } = MidiLib;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("No se pudo cargar " + url);
+  const ab = await res.arrayBuffer();
+  const midi = new Midi(ab);
+
+  const times = [];
+  for (const track of midi.tracks){
+    for (const n of track.notes) times.push(n.time);
+  }
+  times.sort((a,b)=>a-b);
+  return times;
+}
+
+// -------------------- HÁPTICA (2 manos, offsets separados) --------------------
+let rightHaptic = null;
+let leftHaptic = null;
+
+let rightTimes = [];
+let leftTimes  = [];
+let rightIdx = 0;
+let leftIdx  = 0;
+
+let lastVideoTimeForLoop = 0;
+let lastPulseRightAt = -999;
+let lastPulseLeftAt  = -999;
+
+function updateHaptics(session){
+  rightHaptic = null;
+  leftHaptic = null;
+
+  for (const src of session.inputSources){
+    if (!src.gamepad) continue;
+    const acts = src.gamepad.hapticActuators;
+    if (!acts || acts.length === 0) continue;
+
+    if (src.handedness === "right") rightHaptic = acts[0];
+    if (src.handedness === "left")  leftHaptic  = acts[0];
+  }
+
+  log(rightHaptic ? "✅ Háptica derecha OK" : "⚠️ No háptica derecha");
+  log(leftHaptic  ? "✅ Háptica izquierda OK" : "⚠️ No háptica izquierda");
+}
+
+function pulse(actuator){
+  if (!actuator) return;
+  try{ actuator.pulse(HAPTIC_INTENSITY, HAPTIC_DURATION_MS); }catch{}
+}
+
+function resyncIndex(times, midiTime){
+  let lo = 0, hi = times.length;
+  while (lo < hi){
+    const mid = (lo + hi) >> 1;
+    if (times[mid] <= midiTime) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function tickHand(times, which, videoTime, midiTime){
+  if (times.length === 0) return;
+
+  if (which === "R"){
+    while (rightIdx < times.length){
+      const nt = times[rightIdx];
+      const diff = nt - midiTime;
+      if (diff <= HAPTIC_WINDOW){
+        if (videoTime - lastPulseRightAt > MIN_PULSE_GAP){
+          pulse(rightHaptic);
+          lastPulseRightAt = videoTime;
         }
+        rightIdx++;
+        continue;
       }
-      if (line) out.push(line);
-      return out;
+      break;
     }
-
-    function setCueText(fullText) {
-      currentFullText = fullText;
-      const font = "62px Pristina";
-      // layout fijo
-      lines = wrapTextToLines(fullText, 1750, font);
-      totalChars = lines.reduce((acc, l) => acc + l.length, 0) + Math.max(0, lines.length - 1); // + saltos
-      revealedChars = 0;
-      typingActive = true;
-      drawTextCanvas(0);
-    }
-
-    function drawTextCanvas(charsToShow) {
-      ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-
-      // Estilo
-      ctx.font = "62px Pristina";
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-      ctx.textBaseline = "top";
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = 10;
-
-      // Fondo sutil para legibilidad (no oscurece el passthrough global)
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      roundRect(ctx, 40, 40, textCanvas.width - 80, textCanvas.height - 80, 36, true, false);
-
-      // Texto “revelado” sin recalcular layout
-      ctx.fillStyle = "rgba(255,255,255,0.95)";
-
-      let remaining = charsToShow;
-      let x = 110;
-      let y = 120;
-      const lineH = 86;
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // ¿cuántos chars de esta línea puedo mostrar?
-        const take = Math.min(remaining, line.length);
-        const shown = line.slice(0, take);
-
-        ctx.fillText(shown, x, y);
-
-        remaining -= take;
-
-        // consumimos 1 “char virtual” por salto de línea para que el avance sea uniforme
-        if (remaining > 0) remaining -= 1;
-
-        y += lineH;
-        if (remaining <= 0) break;
-      }
-
-      textTex.needsUpdate = true;
-    }
-
-    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
-      if (typeof r === "number") r = {tl:r,tr:r,br:r,bl:r};
-      ctx.beginPath();
-      ctx.moveTo(x + r.tl, y);
-      ctx.lineTo(x + w - r.tr, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + r.tr);
-      ctx.lineTo(x + w, y + h - r.br);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h);
-      ctx.lineTo(x + r.bl, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - r.bl);
-      ctx.lineTo(x, y + r.tl);
-      ctx.quadraticCurveTo(x, y, x + r.tl, y);
-      ctx.closePath();
-      if (fill) ctx.fill();
-      if (stroke) ctx.stroke();
-    }
-
-    // Velocidad escritura: más lento = menor chars por segundo
-    const TYPE_CHARS_PER_SEC = 32; // cámbialo (ej: 20 más lento, 45 más rápido)
-
-    // =========================
-    // MIDI -> HAPTICS (scheduler robusto basado en video.currentTime)
-    // =========================
-    async function loadMidiNotes(url) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("No se pudo cargar MIDI: " + url);
-      const buf = await res.arrayBuffer();
-      const midi = new Midi(buf);
-
-      // Flatten de notas (todas las pistas) por tiempo
-      const notes = [];
-      for (const tr of midi.tracks) {
-        for (const n of tr.notes) notes.push({ time: n.time, velocity: n.velocity });
-      }
-      notes.sort((a,b) => a.time - b.time);
-      return notes;
-    }
-
-    const rightNotes = await loadMidiNotes(MIDI_RIGHT_URL);
-    const leftNotes  = await loadMidiNotes(MIDI_LEFT_URL);
-
-    // Índices de disparo por mano
-    let rightIdx = 0;
-    let leftIdx  = 0;
-
-    // Gamepads XR (se asignan al entrar en sesión)
-    let rightPad = null;
-    let leftPad  = null;
-
-    function getActuator(gamepad) {
-      if (!gamepad) return null;
-      const a = gamepad.hapticActuators && gamepad.hapticActuators[0];
-      return a || null;
-    }
-
-    function pulse(gamepad, intensity) {
-      const a = getActuator(gamepad);
-      if (!a || typeof a.pulse !== "function") return;
-      a.pulse(intensity, HAPTIC_DURATION_MS).catch(()=>{});
-    }
-
-    // Scheduler: dispara eventos cuando (note.time + offset) <= videoTime
-    // con lookahead para estabilidad
-    const LOOKAHEAD = 0.10; // 100ms
-
-    function runHapticsScheduler() {
-      const t = video.currentTime;
-
-      // Mano derecha
-      while (rightIdx < rightNotes.length) {
-        const eventT = rightNotes[rightIdx].time + RIGHT_HAND_OFFSET;
-        if (eventT <= t + LOOKAHEAD) {
-          pulse(rightPad, HAPTIC_INTENSITY_RIGHT);
-          rightIdx++;
-        } else break;
-      }
-
-      // Mano izquierda (7s antes)
-      while (leftIdx < leftNotes.length) {
-        const eventT = leftNotes[leftIdx].time + LEFT_HAND_OFFSET;
-        if (eventT <= t + LOOKAHEAD) {
-          pulse(leftPad, HAPTIC_INTENSITY_LEFT);
-          leftIdx++;
-        } else break;
-      }
-    }
-
-    function resetHaptics() {
-      rightIdx = 0;
-      leftIdx = 0;
-    }
-
-    // =========================
-    // CUES (texto por tiempo)
-    // =========================
-    function updateCuesAndTyping(dt) {
-      if (!CUES || !CUES.length) return;
-
-      const t = video.currentTime;
-
-      // buscar cue actual (asumimos CUES ordenado por t)
-      let idx = -1;
-      for (let i = 0; i < CUES.length; i++) {
-        if (t >= CUES[i].t) idx = i;
-        else break;
-      }
-
-      if (idx !== currentCueIndex) {
-        currentCueIndex = idx;
-        if (idx >= 0) {
-          setCueText(CUES[idx].text || "");
-        } else {
-          setCueText("");
+  } else {
+    while (leftIdx < times.length){
+      const nt = times[leftIdx];
+      const diff = nt - midiTime;
+      if (diff <= HAPTIC_WINDOW){
+        if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
+          pulse(leftHaptic);
+          lastPulseLeftAt = videoTime;
         }
+        leftIdx++;
+        continue;
       }
+      break;
+    }
+  }
+}
 
-      // escribir
-      if (typingActive && totalChars > 0) {
-        revealedChars += TYPE_CHARS_PER_SEC * dt;
-        const show = Math.min(totalChars, Math.floor(revealedChars));
-        drawTextCanvas(show);
-        if (show >= totalChars) typingActive = false;
-      }
+function tickHaptics(videoTime){
+  if (rightTimes.length === 0 && leftTimes.length === 0) return;
+
+  // loop del vídeo
+  if (videoTime + 0.05 < lastVideoTimeForLoop){
+    const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
+    const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
+    rightIdx = resyncIndex(rightTimes, mr);
+    leftIdx  = resyncIndex(leftTimes,  ml);
+  }
+  lastVideoTimeForLoop = videoTime;
+
+  const midiTimeR = videoTime - MIDI_OFFSET_RIGHT;
+  const midiTimeL = videoTime - MIDI_OFFSET_LEFT;
+
+  if (midiTimeR >= 0) tickHand(rightTimes, "R", videoTime, midiTimeR);
+  if (midiTimeL >= 0) tickHand(leftTimes,  "L", videoTime, midiTimeL);
+}
+
+// -------------------- RENDER LOOP --------------------
+renderer.setAnimationLoop(()=>{
+  if (video.readyState >= 2) videoTex.needsUpdate = true;
+
+  const t = video.currentTime;
+
+  while (nextCue < cues.length && t >= cues[nextCue].t){
+    setupText(cues[nextCue].text);
+    nextCue++;
+  }
+
+  const dt = Math.max(0, t - prevVideoT);
+  prevVideoT = t;
+  stepType(dt);
+
+  tickHaptics(t);
+
+  renderer.render(scene, camera);
+});
+
+// -------------------- BOTONES --------------------
+const btnStart = document.getElementById("start");
+const btnAR = document.getElementById("enterAR");
+const btnVR = document.getElementById("enterVR");
+
+async function enter(mode){
+  const s = await navigator.xr.requestSession(mode,{
+    optionalFeatures:["local-floor","bounded-floor","hand-tracking"]
+  });
+  renderer.xr.setSession(s);
+
+  updateHaptics(s);
+  s.addEventListener("inputsourceschange", () => updateHaptics(s));
+
+  overlay.style.display = "none";
+}
+
+btnStart.onclick = async () => {
+  try {
+    loadPristinaFontNonBlocking();
+
+    // 1) vídeo
+    video.muted = false;
+    video.volume = 1.0;
+    await video.play();
+    log("▶ Vídeo iniciado (con sonido)");
+
+    // 2) MIDI (2 archivos)
+    try{
+      log("⏳ Cargando MIDI derecha...");
+      rightTimes = await loadMidiTimes(MIDI_RIGHT_URL);
+      log("✅ MIDI derecha OK (" + rightTimes.length + " notas)");
+
+      log("⏳ Cargando MIDI izquierda...");
+      leftTimes = await loadMidiTimes(MIDI_LEFT_URL);
+      log("✅ MIDI izquierda OK (" + leftTimes.length + " notas)");
+
+      // resync inicial con offsets separados
+      const mr = Math.max(0, video.currentTime - MIDI_OFFSET_RIGHT);
+      const ml = Math.max(0, video.currentTime - MIDI_OFFSET_LEFT);
+      rightIdx = resyncIndex(rightTimes, mr);
+      leftIdx  = resyncIndex(leftTimes,  ml);
+
+      log("🟣 Háptica 2 manos lista. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
+    }catch(e){
+      log("⚠️ MIDI/háptica no disponibles: " + (e?.message || e));
     }
 
-    // =========================
-    // WebXR Session + Anchoring (no head-locked)
-    // =========================
-    let lastTs = 0;
-    let anchored = false;
+    btnAR.disabled = false;
+    btnVR.disabled = false;
 
-    function placeInFrontOnce() {
-      // Colocamos una sola vez delante del usuario al entrar
-      // sin seguir la cabeza (world-locked).
-      const xrCam = renderer.xr.getCamera(camera);
-      const dir = new THREE.Vector3();
-      xrCam.getWorldDirection(dir);
+  } catch (e) {
+    log("❌ No se pudo iniciar: " + (e?.message || e));
+  }
+};
 
-      const pos = new THREE.Vector3();
-      xrCam.getWorldPosition(pos);
+btnAR.onclick = async () => {
+  try{
+    const ok = await navigator.xr.isSessionSupported("immersive-ar");
+    if (!ok) throw new Error("immersive-ar no soportado");
+    await enter("immersive-ar");
+  }catch(e){
+    log("❌ AR: " + (e?.message || e));
+  }
+};
 
-      // Posición del panel (vídeo)
-      const panelPos = pos.clone().add(dir.multiplyScalar(PANEL_DISTANCE));
-      panelPos.y = PANEL_Y;
+btnVR.onclick = async () => {
+  try{ await enter("immersive-vr"); }
+  catch(e){ log("❌ VR: " + (e?.message || e)); }
+};
 
-      videoMesh.position.copy(panelPos);
-      videoMesh.lookAt(pos.x, panelPos.y, pos.z); // “mirando” al usuario pero fijo en mundo
+window.addEventListener("resize", ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
 
-      // Texto un poco por encima, más cerca también
-      const dir2 = new THREE.Vector3();
-      xrCam.getWorldDirection(dir2);
-
-      const textPos = pos.clone().add(dir2.multiplyScalar(PANEL_DISTANCE));
-      textPos.y = TEXT_Y;
-
-      textMesh.position.copy(textPos);
-      textMesh.lookAt(pos.x, textPos.y, pos.z);
-
-      anchored = true;
-    }
-
-    renderer.setAnimationLoop((ts) => {
-      const dt = lastTs ? (ts - lastTs) / 1000 : 0;
-      lastTs = ts;
-
-      if (!anchored && renderer.xr.isPresenting) {
-        placeInFrontOnce();
-      }
-
-      if (video.readyState >= 2 && !video.paused) {
-        runHapticsScheduler();
-        updateCuesAndTyping(dt);
-      }
-
-      renderer.render(scene, camera);
-    });
-
-    // =========================
-    // UI / Start AR
-    // =========================
-    const btn = document.getElementById("btn");
-
-    btn.addEventListener("click", async () => {
-      // Requisito de autoplay: play tras gesto del usuario
-      try { await video.play(); } catch (e) {
-        // si falla, probamos muted->play->unmute (algunos navegadores)
-        video.muted = true;
-        try { await video.play(); } catch(_) {}
-        video.muted = false;
-      }
-
-      resetHaptics();
-      anchored = false;
-
-      // ARButton (passthrough)
-      const arBtn = ARButton.createButton(renderer, {
-        requiredFeatures: ["local-floor"],
-        optionalFeatures: ["dom-overlay", "dom-overlay-for-handheld-ar"],
-        domOverlay: { root: document.body }
-      });
-
-      // Dispara el click del ARButton “interno” automáticamente
-      document.body.appendChild(arBtn);
-      arBtn.click();
-      arBtn.remove();
-
-      document.getElementById("ui").style.display = "none";
-    });
-
-    // Captura mandos (handedness)
-    renderer.xr.addEventListener("sessionstart", () => {
-      const session = renderer.xr.getSession();
-      if (!session) return;
-
-      // reset haptics cada vez
-      resetHaptics();
-      anchored = false;
-
-      function updateInputs() {
-        rightPad = null;
-        leftPad = null;
-
-        for (const src of session.inputSources) {
-          if (!src || !src.gamepad) continue;
-          if (src.handedness === "right") rightPad = src.gamepad;
-          if (src.handedness === "left")  leftPad = src.gamepad;
-        }
-      }
-
-      updateInputs();
-      session.addEventListener("inputsourceschange", updateInputs);
-    });
-
-    // Responsive
-    window.addEventListener("resize", () => {
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-  </script>
+log("✅ App cargada. Pulsa “Iniciar vídeo”.");
+</script>
 </body>
 </html>
