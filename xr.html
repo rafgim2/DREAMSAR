@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XR AR Video + MIDI + Marco + Partículas</title>
+<title>XR AR Video + MIDI + Marco + Partículas desde mandos</title>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
@@ -30,7 +30,7 @@
 <div id="overlay">
   <div class="card">
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
-    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + háptica + marco + partículas desde mandos</p>
+    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + háptica + marco gradiente + partículas desde mandos</p>
 
     <button id="start">▶ Iniciar vídeo</button>
     <button id="enterAR" disabled>Entrar en AR</button>
@@ -48,30 +48,37 @@ const overlay = document.getElementById("overlay");
 const logEl = document.getElementById("log");
 const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; };
 
-// -------------------- CONFIG MIDI/HÁPTICA --------------------
+// ==================== CONFIG MIDI/HÁPTICA ====================
 const MIDI_RIGHT_URL = "./dream14.mid";
 const MIDI_LEFT_URL  = "./dream14iz.mid";
 
+// offsets finales (los tuyos)
 const MIDI_OFFSET_RIGHT = 14.5;
 const MIDI_OFFSET_LEFT  = 8.5;
 
+// vibración
 const HAPTIC_INTENSITY = 0.35;
 const HAPTIC_DURATION_MS = 18;
 const HAPTIC_WINDOW = 0.020;
 const MIN_PULSE_GAP = 0.010;
 
-// -------------------- FUENTE PRISTINA (no bloqueante) --------------------
+// ==================== FUENTE PRISTINA (no bloqueante) ====================
 let FONT_READY = false;
 function loadPristinaFontNonBlocking(){
   try{
     const f = new FontFace("PristinaAR","url(./PRISTINA.TTF)");
-    f.load().then(() => { document.fonts.add(f); FONT_READY = true; log("✅ Fuente PRISTINA cargada"); })
-      .catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
-  }catch{ log("⚠️ FontFace no disponible (fallback)"); }
+    f.load().then(() => {
+      document.fonts.add(f);
+      FONT_READY = true;
+      log("✅ Fuente PRISTINA cargada");
+    }).catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
+  }catch{
+    log("⚠️ FontFace no disponible (fallback)");
+  }
 }
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
-// -------------------- THREE / XR --------------------
+// ==================== THREE / XR ====================
 const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -84,9 +91,10 @@ scene.background = null;
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 50);
 camera.position.set(0, 1.6, 2);
 
+// luz suave
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 
-// -------------------- VIDEO + AUDIO --------------------
+// ==================== VIDEO + AUDIO ====================
 const video = document.createElement("video");
 video.src = VIDEO_URL;
 video.crossOrigin = "anonymous";
@@ -104,6 +112,11 @@ video.style.top = "-9999px";
 video.width = 1; video.height = 1;
 document.body.appendChild(video);
 
+video.addEventListener("error", () => {
+  const e = video.error;
+  log("❌ Error video: " + (e ? (e.code + " " + e.message) : "desconocido"));
+});
+
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
@@ -117,15 +130,15 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
-// -------------------- MARCO REDONDEADO CON GRADIENTE --------------------
+// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
 scene.add(frameGroup);
 
-const margin = 0.010;
-const border = 0.030;
-const radius = 0.070;
+const margin = 0.010; // pegado
+const border = 0.030; // grosor
+const radius = 0.070; // esquinas redondeadas
 const zFront = 0.003;
 
 const gradCanvas = document.createElement("canvas");
@@ -140,6 +153,7 @@ gradTex.magFilter = THREE.LinearFilter;
 function drawGradient(phase, energy){
   gctx.clearRect(0,0,512,512);
   const cx = 256, cy = 256;
+
   const angle = phase * 0.35 + energy * 0.25;
   const dx = Math.cos(angle) * 180;
   const dy = Math.sin(angle) * 180;
@@ -153,14 +167,16 @@ function drawGradient(phase, energy){
   gctx.fillStyle = grd;
   gctx.fillRect(0,0,512,512);
 
-  gctx.globalAlpha = 0.08;
-  for (let i=0;i<450;i++){
+  // grano finísimo
+  gctx.globalAlpha = 0.06;
+  for (let i=0;i<350;i++){
     const x = Math.random()*512, y = Math.random()*512;
     const r = Math.random()*2.0;
     gctx.fillStyle = "rgba(255,255,255,0.6)";
     gctx.beginPath(); gctx.arc(x,y,r,0,Math.PI*2); gctx.fill();
   }
   gctx.globalAlpha = 1.0;
+
   gradTex.needsUpdate = true;
 }
 
@@ -201,7 +217,7 @@ frameGroup.add(frameMesh);
 let frameEnergy = 0;
 let framePhase = 0;
 
-// -------------------- TEXTO: escritura estable --------------------
+// ==================== TEXTO “ESCRITURA” ====================
 const pad = 36, fontPx = 56, lineH = 78;
 let canvas, ctx, texture, plane;
 let fullLines = [], fullWidths = [], fullText = "";
@@ -298,11 +314,11 @@ function stepType(dt){
   }
 }
 
-// -------------------- CUES --------------------
+// ==================== CUES ====================
 const cues = [...CUES].sort((a,b)=>a.t-b.t);
 let nextCue = 0;
 
-// -------------------- MIDI LIB + CARGA --------------------
+// ==================== MIDI LIB + CARGA ====================
 let MidiLib = null;
 async function loadMidiLib(){
   if (MidiLib) return;
@@ -328,37 +344,40 @@ async function loadMidiTimes(url){
   return times;
 }
 
-// -------------------- XR CONTROLLERS (para partículas) --------------------
+// ==================== CONTROLLERS (GRIP SPACE) ====================
 let xrSession = null;
-const controllerR = renderer.xr.getController(0);
-const controllerL = renderer.xr.getController(1);
-scene.add(controllerR);
-scene.add(controllerL);
 
-// Mapeo real handedness -> objeto
+// IMPORTANTE: grip tiene pose real del mando
 let controllerRightObj = null;
-let controllerLeftObj = null;
+let controllerLeftObj  = null;
 
 function remapControllers(session){
   controllerRightObj = null;
-  controllerLeftObj = null;
+  controllerLeftObj  = null;
 
-  // Los controllers de Three se indexan por inputSources; mapeamos
-  const sources = session.inputSources;
-  for (let i=0;i<sources.length;i++){
-    const s = sources[i];
-    const obj = renderer.xr.getController(i);
-    if (s.handedness === "right") controllerRightObj = obj;
-    if (s.handedness === "left")  controllerLeftObj  = obj;
+  for (let i = 0; i < session.inputSources.length; i++){
+    const src = session.inputSources[i];
+    if (!src.gamepad) continue;
+
+    if (src.handedness === "right"){
+      controllerRightObj = renderer.xr.getControllerGrip(i);
+      scene.add(controllerRightObj);
+    }
+    if (src.handedness === "left"){
+      controllerLeftObj = renderer.xr.getControllerGrip(i);
+      scene.add(controllerLeftObj);
+    }
   }
+
+  log(controllerRightObj ? "🎮 Mando derecho OK" : "⚠️ No mando derecho");
+  log(controllerLeftObj  ? "🎮 Mando izquierdo OK" : "⚠️ No mando izquierdo");
 }
 
-// -------------------- PARTÍCULAS (pool muy ligero) --------------------
-const MAX_PARTICLES = 140;     // bajo para Quest
-const P_SPAWN = 3;             // partículas por nota
-const P_LIFE = 0.9;            // segundos
+// ==================== PARTÍCULAS (pool ligero) ====================
+const MAX_PARTICLES = 160;
+const P_SPAWN = 2;     // sutil
+const P_LIFE = 1.15;   // atmósfera
 
-// textura sprite (círculo suave)
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -377,27 +396,23 @@ const spriteTex = makeSpriteTexture();
 
 const positions = new Float32Array(MAX_PARTICLES * 3);
 const colors    = new Float32Array(MAX_PARTICLES * 3);
-const sizes     = new Float32Array(MAX_PARTICLES);
-const alive     = new Float32Array(MAX_PARTICLES); // tiempo restante
+const alive     = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-const geom = new THREE.BufferGeometry();
-geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-geom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
-geom.setAttribute("size",     new THREE.BufferAttribute(sizes, 1));
+const pGeom = new THREE.BufferGeometry();
+pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
 
-const mat = new THREE.PointsMaterial({
+const pMat = new THREE.PointsMaterial({
   map: spriteTex,
   transparent: true,
   depthWrite: false,
   vertexColors: true,
-  opacity: 0.85,
-  size: 0.03,          // base; por partícula ajustamos en sizes (pero PointsMaterial usa size global)
+  opacity: 0.75,
+  size: 0.03,
   sizeAttenuation: true
 });
 
-// Para poder variar tamaño por partícula, lo más ligero es quedarse con size global,
-// y variar “intensidad” con color/alpha. Aun así guardamos sizes por si luego quieres shader.
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
   positions[i*3+0] = 0;
@@ -405,56 +420,45 @@ for (let i=0;i<MAX_PARTICLES;i++){
   positions[i*3+2] = 0;
   colors[i*3+0] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
 }
-geom.attributes.position.needsUpdate = true;
+pGeom.attributes.position.needsUpdate = true;
 
-const points = new THREE.Points(geom, mat);
+const points = new THREE.Points(pGeom, pMat);
 scene.add(points);
 
 let pCursor = 0;
 const tmpV = new THREE.Vector3();
-const tmpUp = new THREE.Vector3(0,1,0);
 
 function spawnParticlesFrom(worldPos, warm){ // warm 0..1
-  // color cálido (amarillo->naranja->marrón)
-  const base = 0.3 + warm*0.7;
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
 
     alive[i] = P_LIFE;
 
-    // posición inicial: un pelín aleatoria
     positions[i*3+0] = worldPos.x + (Math.random()-0.5)*0.03;
     positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.03;
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.03;
 
-    // velocidad: hacia arriba suave + deriva
-    velocity[i*3+0] = (Math.random()-0.5)*0.08;
-    velocity[i*3+1] = 0.18 + Math.random()*0.12;
-    velocity[i*3+2] = (Math.random()-0.5)*0.08;
+    // suave hacia arriba
+    velocity[i*3+0] = (Math.random()-0.5)*0.06;
+    velocity[i*3+1] = 0.16 + Math.random()*0.10;
+    velocity[i*3+2] = (Math.random()-0.5)*0.06;
 
-    // color cálido (mezcla sutil)
-    // amarillito arriba, naranja medio, marrón bajo (pero suave)
-    colors[i*3+0] = 1.0;
-    colors[i*3+1] = 0.65 + 0.25*Math.random();
-    colors[i*3+2] = 0.20 + 0.15*Math.random();
-
-    // si warm bajo, más apagado
-    colors[i*3+0] *= (0.8 + 0.2*base);
-    colors[i*3+1] *= (0.7 + 0.3*base);
-    colors[i*3+2] *= (0.7 + 0.3*base);
+    // color cálido sutil
+    const b = 0.65 + warm*0.35;
+    colors[i*3+0] = 1.0 * b;
+    colors[i*3+1] = (0.65 + 0.25*Math.random()) * b;
+    colors[i*3+2] = (0.18 + 0.12*Math.random()) * b;
   }
 
-  geom.attributes.position.needsUpdate = true;
-  geom.attributes.color.needsUpdate = true;
+  pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
 }
 
 function updateParticles(dt){
-  // integración simple + fade
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
     alive[i] -= dt;
-    const a = Math.max(0, alive[i] / P_LIFE);
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
@@ -462,25 +466,17 @@ function updateParticles(dt){
 
     // fricción suave
     velocity[i*3+0] *= (1 - dt*1.2);
-    velocity[i*3+1] *= (1 - dt*0.7);
+    velocity[i*3+1] *= (1 - dt*0.8);
     velocity[i*3+2] *= (1 - dt*1.2);
 
-    // fade con color (PointsMaterial usa color; “alpha” global)
-    // reducimos brillo bajando color:
-    colors[i*3+0] *= (0.985 + a*0.015);
-    colors[i*3+1] *= (0.985 + a*0.015);
-    colors[i*3+2] *= (0.985 + a*0.015);
-
     if (alive[i] <= 0){
-      // esconder abajo
       positions[i*3+1] = -999;
     }
   }
-  geom.attributes.position.needsUpdate = true;
-  geom.attributes.color.needsUpdate = true;
+  pGeom.attributes.position.needsUpdate = true;
 }
 
-// -------------------- HÁPTICA --------------------
+// ==================== HÁPTICA ====================
 let rightHaptic = null;
 let leftHaptic = null;
 
@@ -537,10 +533,9 @@ function tickHand(times, which, videoTime, midiTime){
           pulse(rightHaptic);
           lastPulseRightAt = videoTime;
 
-          // partículas desde mando derecho
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpV);
-            spawnParticlesFrom(tmpV, 0.6);
+            spawnParticlesFrom(tmpV, 0.55);
           }
         }
         rightIdx++;
@@ -557,10 +552,8 @@ function tickHand(times, which, videoTime, midiTime){
           pulse(leftHaptic);
           lastPulseLeftAt = videoTime;
 
-          // energía marco (muy sutil)
-          frameEnergy = Math.min(1.0, frameEnergy + 0.18);
+          frameEnergy = Math.min(1.0, frameEnergy + 0.16);
 
-          // partículas desde mando izquierdo
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpV);
             spawnParticlesFrom(tmpV, 0.9);
@@ -592,7 +585,7 @@ function tickHaptics(videoTime){
   if (midiTimeL >= 0) tickHand(leftTimes,  "L", videoTime, midiTimeL);
 }
 
-// -------------------- RENDER LOOP --------------------
+// ==================== RENDER LOOP ====================
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
 
@@ -609,19 +602,19 @@ renderer.setAnimationLoop(()=>{
 
   tickHaptics(t);
 
-  // Marco gradiente sutil
+  // marco gradiente sutil
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
-  // Partículas
+  // partículas
   updateParticles(dt);
 
   renderer.render(scene, camera);
 });
 
-// -------------------- BOTONES --------------------
+// ==================== BOTONES ====================
 const btnStart = document.getElementById("start");
 const btnAR = document.getElementById("enterAR");
 const btnVR = document.getElementById("enterVR");
@@ -633,7 +626,6 @@ async function enter(mode){
   xrSession = s;
   renderer.xr.setSession(s);
 
-  // remapeo controllers + háptica al entrar
   remapControllers(s);
   updateHaptics(s);
 
@@ -705,31 +697,5 @@ window.addEventListener("resize", ()=>{
 
 log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
-
-<script type="module">
-  // MIDI lib loader (kept separate so it doesn't break earlier modules)
-</script>
-
-<script type="module">
-// Import dinámico de Midi al primer uso (evita problemas en Quest)
-let __MidiLibPromise = null;
-window.__loadMidiLib = function(){
-  if (!__MidiLibPromise){
-    __MidiLibPromise = import("https://esm.sh/@tonejs/midi@2.0.28?bundle");
-  }
-  return __MidiLibPromise;
-};
-</script>
-
-<script type="module">
-// Parche: redefine loadMidiLib para usar el loader global (más robusto)
-</script>
-
-<script type="module">
-/* Reemplazamos loadMidiLib del módulo principal mediante un truco simple:
-   En vez de hacerlo aquí, ya lo hemos importado antes en el módulo principal.
-   (Este bloque extra no hace nada; se deja para que no se rompa nada en algunos navegadores.) */
-</script>
-
 </body>
 </html>
