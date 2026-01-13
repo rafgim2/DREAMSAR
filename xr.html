@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XR AR Video + MIDI Háptica (2 manos) + Marco Reactivo</title>
+<title>XR AR Video + MIDI Háptica (2 manos) + Marco Gradiente</title>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
@@ -30,7 +30,7 @@
 <div id="overlay">
   <div class="card">
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
-    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + vibración 2 manos (MIDI) + marco reactivo</p>
+    <p style="margin:0 0 14px 0;opacity:.9;">Vídeo + texto + vibración 2 manos (MIDI) + marco gradiente</p>
 
     <button id="start">▶ Iniciar vídeo</button>
     <button id="enterAR" disabled>Entrar en AR</button>
@@ -49,32 +49,27 @@ const logEl = document.getElementById("log");
 const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; };
 
 // -------------------- CONFIG MIDI/HÁPTICA --------------------
-const MIDI_RIGHT_URL = "./dream14.mid";     // derecha
-const MIDI_LEFT_URL  = "./dream14iz.mid";   // izquierda
+const MIDI_RIGHT_URL = "./dream14.mid";
+const MIDI_LEFT_URL  = "./dream14iz.mid";
 
-// ✅ tus offsets actuales
+// offsets finales
 const MIDI_OFFSET_RIGHT = 14.5;
-const MIDI_OFFSET_LEFT  = 8.5;   // izquierda empieza antes (tu ajuste final)
+const MIDI_OFFSET_LEFT  = 8.5;
 
-// ✅ vibración
-const HAPTIC_INTENSITY = 0.35; // 0..1
-const HAPTIC_DURATION_MS = 18; // ms
-const HAPTIC_WINDOW = 0.020;   // 20ms tolerancia
-const MIN_PULSE_GAP = 0.010;   // evita spam
+// vibración
+const HAPTIC_INTENSITY = 0.35;
+const HAPTIC_DURATION_MS = 18;
+const HAPTIC_WINDOW = 0.020;
+const MIN_PULSE_GAP = 0.010;
 
 // -------------------- FUENTE PRISTINA (no bloqueante) --------------------
 let FONT_READY = false;
 function loadPristinaFontNonBlocking(){
   try{
     const f = new FontFace("PristinaAR","url(./PRISTINA.TTF)");
-    f.load().then(() => {
-      document.fonts.add(f);
-      FONT_READY = true;
-      log("✅ Fuente PRISTINA cargada");
-    }).catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
-  }catch{
-    log("⚠️ FontFace no disponible (fallback)");
-  }
+    f.load().then(() => { document.fonts.add(f); FONT_READY = true; log("✅ Fuente PRISTINA cargada"); })
+      .catch(() => log("⚠️ PRISTINA.TTF no cargó (fallback)"));
+  }catch{ log("⚠️ FontFace no disponible (fallback)"); }
 }
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
@@ -129,41 +124,107 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
-// -------------------- MARCO REACTIVO (mano izquierda) --------------------
+// -------------------- MARCO REDONDEADO CON GRADIENTE --------------------
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
 scene.add(frameGroup);
 
-const thickness = 0.03; // grosor marco
-const depth = 0.005;    // profundidad
-const margin = 0.025;   // separación con respecto al vídeo
+// más pegado al vídeo
+const margin = 0.010;     // ⬅️ más pegado
+const border = 0.030;     // grosor del marco
+const radius = 0.070;     // redondeo esquinas (en unidades del plano)
+const zFront = 0.003;     // delante del vídeo
 
-const frameMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff,
-  emissive: 0xffffff,
-  emissiveIntensity: 0.12, // base
-  metalness: 0.2,
-  roughness: 0.25
-});
+// Canvas gradiente (se puede “animar” cambiando stops/rotación)
+const gradCanvas = document.createElement("canvas");
+gradCanvas.width = 512;
+gradCanvas.height = 512;
+const gctx = gradCanvas.getContext("2d");
+const gradTex = new THREE.CanvasTexture(gradCanvas);
+gradTex.colorSpace = THREE.SRGBColorSpace;
+gradTex.wrapS = gradTex.wrapT = THREE.ClampToEdgeWrapping;
+gradTex.minFilter = THREE.LinearFilter;
+gradTex.magFilter = THREE.LinearFilter;
 
-function makeBar(w,h,x,y){
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), frameMat);
-  mesh.position.set(x, y, 0.002); // un poco delante
-  frameGroup.add(mesh);
-  return mesh;
+function drawGradient(phase, energy){
+  // Fondo transparente
+  gctx.clearRect(0,0,gradCanvas.width,gradCanvas.height);
+
+  // Gradiente “vivo”: gira y desplaza un poco
+  const cx = gradCanvas.width/2;
+  const cy = gradCanvas.height/2;
+
+  const angle = phase * 0.35 + energy * 0.25; // muy sutil
+  const dx = Math.cos(angle) * 180;
+  const dy = Math.sin(angle) * 180;
+
+  const grd = gctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+
+  // Amarillo -> naranja -> marrón (tú paleta)
+  // energy sube un poquito la viveza, pero sin “neón”
+  const a = 0.92 + energy * 0.06; // alpha
+  grd.addColorStop(0.00, `rgba(255, 214, 100, ${a})`); // amarillo cálido
+  grd.addColorStop(0.50, `rgba(255, 140,  60, ${a})`); // naranja
+  grd.addColorStop(1.00, `rgba(120,  55,  20, ${a})`); // marrón
+
+  gctx.fillStyle = grd;
+  gctx.fillRect(0,0,gradCanvas.width,gradCanvas.height);
+
+  // “grano” muy fino (opcional) para sensación orgánica
+  gctx.globalAlpha = 0.08;
+  for (let i=0;i<450;i++){
+    const x = Math.random()*512, y = Math.random()*512;
+    const r = Math.random()*2.0;
+    gctx.fillStyle = "rgba(255,255,255,0.6)";
+    gctx.beginPath();
+    gctx.arc(x,y,r,0,Math.PI*2);
+    gctx.fill();
+  }
+  gctx.globalAlpha = 1.0;
+
+  gradTex.needsUpdate = true;
 }
 
-const fw = screenW + margin*2;
-const fh = screenH + margin*2;
+// Anillo redondeado (shape exterior - shape interior)
+function roundedRectShape(w,h,r){
+  const x = -w/2, y = -h/2;
+  const s = new THREE.Shape();
+  s.moveTo(x+r, y);
+  s.lineTo(x+w-r, y);
+  s.quadraticCurveTo(x+w, y, x+w, y+r);
+  s.lineTo(x+w, y+h-r);
+  s.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  s.lineTo(x+r, y+h);
+  s.quadraticCurveTo(x, y+h, x, y+h-r);
+  s.lineTo(x, y+r);
+  s.quadraticCurveTo(x, y, x+r, y);
+  return s;
+}
 
-makeBar(fw, thickness, 0,  fh/2);  // arriba
-makeBar(fw, thickness, 0, -fh/2);  // abajo
-makeBar(thickness, fh,  fw/2, 0);  // derecha
-makeBar(thickness, fh, -fw/2, 0);  // izquierda
+const outerW = screenW + margin*2;
+const outerH = screenH + margin*2;
+const innerW = outerW - border*2;
+const innerH = outerH - border*2;
 
-let frameEnergy = 0; // 0..1 (acumulada)
-let framePulse  = 0; // 0..1 (latido rápido)
+const outer = roundedRectShape(outerW, outerH, radius);
+const hole  = roundedRectShape(innerW, innerH, Math.max(0.001, radius - border));
+outer.holes.push(hole);
+
+const frameGeo = new THREE.ShapeGeometry(outer);
+const frameMat = new THREE.MeshBasicMaterial({
+  map: gradTex,
+  transparent: true,
+  opacity: 0.85  // base (lo subiremos un poco con energía)
+});
+
+const frameMesh = new THREE.Mesh(frameGeo, frameMat);
+frameMesh.position.set(0, 0, zFront);
+frameGroup.add(frameMesh);
+
+// Estado reactivo
+let frameEnergy = 0;   // 0..1
+let framePhase = 0;    // avanza con el tiempo
 
 // -------------------- TEXTO: escritura estable --------------------
 const pad = 36, fontPx = 56, lineH = 78;
@@ -172,7 +233,7 @@ let fullLines = [], fullWidths = [], fullText = "";
 let cursor = 0, nextT = 0;
 let prevVideoT = 0;
 
-// ✅ tu altura
+// tu altura
 const TEXT_Y = 1.65;
 
 // velocidad del “escrito”
@@ -299,7 +360,7 @@ async function loadMidiTimes(url){
   return times;
 }
 
-// -------------------- HÁPTICA (2 manos, offsets separados) --------------------
+// -------------------- HÁPTICA (2 manos) --------------------
 let rightHaptic = null;
 let leftHaptic = null;
 
@@ -370,9 +431,8 @@ function tickHand(times, which, videoTime, midiTime){
           pulse(leftHaptic);
           lastPulseLeftAt = videoTime;
 
-          // ✅ impulso visual al marco en cada nota izquierda
-          frameEnergy = Math.min(1.0, frameEnergy + 0.35);
-          framePulse  = 1.0;
+          // ✅ reacción visual sutil al marco (sube energía un poco)
+          frameEnergy = Math.min(1.0, frameEnergy + 0.22);
         }
         leftIdx++;
         continue;
@@ -419,21 +479,18 @@ renderer.setAnimationLoop(()=>{
 
   tickHaptics(t);
 
-  // -------------------- UPDATE MARCO REACTIVO --------------------
-  // decay suave
-  const decayEnergy = Math.exp(-dt * 6.0);
-  frameEnergy *= decayEnergy;
+  // -------------------- UPDATE MARCO GRADIENTE (MUY SUTIL) --------------------
+  // decay suave (más lento, menos “latido”)
+  frameEnergy *= Math.exp(-dt * 3.2);
 
-  // latido rápido
-  const decayPulse = Math.exp(-dt * 14.0);
-  framePulse *= decayPulse;
+  // fase continua para que el gradiente vaya cambiando despacio
+  framePhase += dt * (0.18 + frameEnergy * 0.25);
 
-  // brillo (base + energía)
-  frameMat.emissiveIntensity = 0.12 + frameEnergy * 0.9;
+  // redibuja gradiente con energía (cambios sutiles)
+  drawGradient(framePhase, frameEnergy);
 
-  // micro-zoom
-  const s = 1.0 + framePulse * 0.015;
-  frameGroup.scale.set(s, s, 1.0);
+  // opacidad y brillo sutiles (sin latido ni zoom)
+  frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
   renderer.render(scene, camera);
 });
@@ -459,13 +516,16 @@ btnStart.onclick = async () => {
   try {
     loadPristinaFontNonBlocking();
 
-    // 1) vídeo
+    // pinta gradiente inicial
+    drawGradient(0, 0);
+
+    // vídeo
     video.muted = false;
     video.volume = 1.0;
     await video.play();
     log("▶ Vídeo iniciado (con sonido)");
 
-    // 2) MIDI (2 archivos)
+    // MIDI
     try{
       log("⏳ Cargando MIDI derecha...");
       rightTimes = await loadMidiTimes(MIDI_RIGHT_URL);
@@ -475,7 +535,6 @@ btnStart.onclick = async () => {
       leftTimes = await loadMidiTimes(MIDI_LEFT_URL);
       log("✅ MIDI izquierda OK (" + leftTimes.length + " notas)");
 
-      // resync inicial con offsets separados
       const mr = Math.max(0, video.currentTime - MIDI_OFFSET_RIGHT);
       const ml = Math.max(0, video.currentTime - MIDI_OFFSET_LEFT);
       rightIdx = resyncIndex(rightTimes, mr);
