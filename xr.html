@@ -131,6 +131,28 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
+// ==================== ESQUINAS DEL VÍDEO (WORLD) ====================
+const cornerTL = new THREE.Vector3();
+const cornerTR = new THREE.Vector3();
+const cornerBL = new THREE.Vector3();
+const cornerBR = new THREE.Vector3();
+
+function updateVideoCornersWorld(){
+  // top-left
+  cornerTL.set(-screenW/2,  screenH/2, 0.0001);
+  screen.localToWorld(cornerTL);
+  // top-right
+  cornerTR.set( screenW/2,  screenH/2, 0.0001);
+  screen.localToWorld(cornerTR);
+  // bottom-left
+  cornerBL.set(-screenW/2, -screenH/2, 0.0001);
+  screen.localToWorld(cornerBL);
+  // bottom-right
+  cornerBR.set( screenW/2, -screenH/2, 0.0001);
+  screen.localToWorld(cornerBR);
+}
+updateVideoCornersWorld();
+
 // ==================== MARCO REDONDEADO GRADIENTE ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
@@ -356,21 +378,20 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
-// ==================== PARTÍCULAS (FADE PERFECTO EN PASSTHROUGH) ====================
-// Clave: fade por ALPHA (atributo), y discard en alpha bajo (sin halo negro).
+// ==================== PARTÍCULAS (con target hacia pantalla) ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 3.5;
+
+// “tendencia” hacia la pantalla:
+const TARGET_BIAS_PUSH = 0.12;   // empuje inicial (sutil)
+const TARGET_ATTRACT   = 0.28;   // atracción durante vida (sutil)
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
   const cx = c.getContext("2d");
-
-  // Fondo totalmente transparente
   cx.clearRect(0,0,64,64);
-
-  // Alpha radial (RGB blanco), sin negro
   const g = cx.createRadialGradient(32,32,0,32,32,30);
   g.addColorStop(0.0,"rgba(255,255,255,1)");
   g.addColorStop(0.6,"rgba(255,255,255,0.35)");
@@ -388,9 +409,14 @@ const spriteTex = makeSpriteTexture();
 
 const positions = new Float32Array(MAX_PARTICLES * 3);
 const colors    = new Float32Array(MAX_PARTICLES * 3);
-const alphas    = new Float32Array(MAX_PARTICLES);      // ✅ alpha por partícula
+const alphas    = new Float32Array(MAX_PARTICLES);
 const alive     = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
+
+// ✅ guardamos target por partícula (izq/dcha)
+const targetX = new Float32Array(MAX_PARTICLES);
+const targetY = new Float32Array(MAX_PARTICLES);
+const targetZ = new Float32Array(MAX_PARTICLES);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -404,6 +430,7 @@ for (let i=0;i<MAX_PARTICLES;i++){
   positions[i*3+2] = 0;
   colors[i*3+0]=1; colors[i*3+1]=1; colors[i*3+2]=1;
   alphas[i]=0;
+  targetX[i]=0; targetY[i]=0; targetZ[i]=0;
 }
 
 const pMat = new THREE.ShaderMaterial({
@@ -413,7 +440,7 @@ const pMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending,
   uniforms: {
     uMap: { value: spriteTex },
-    uSize: { value: 22.0 } // tamaño en píxeles aprox (Quest)
+    uSize: { value: 22.0 }
   },
   vertexShader: `
     attribute vec3 color;
@@ -421,14 +448,11 @@ const pMat = new THREE.ShaderMaterial({
     varying vec3 vColor;
     varying float vAlpha;
     uniform float uSize;
-
     void main(){
       vColor = color;
       vAlpha = aAlpha;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mvPosition;
-
-      // tamaño atenuado por distancia
       float dist = -mvPosition.z;
       gl_PointSize = uSize * (1.0 / max(0.2, dist));
     }
@@ -437,15 +461,10 @@ const pMat = new THREE.ShaderMaterial({
     uniform sampler2D uMap;
     varying vec3 vColor;
     varying float vAlpha;
-
     void main(){
       vec4 tex = texture2D(uMap, gl_PointCoord);
       float a = tex.a * vAlpha;
-
-      // ✅ evita “restos” (halo) cuando casi desaparece
       if (a < 0.02) discard;
-
-      // En aditivo, el negro no “ensucia”: sumamos luz
       vec3 col = vColor * tex.a;
       gl_FragColor = vec4(col, a);
     }
@@ -458,38 +477,67 @@ points.renderOrder = 999;
 scene.add(points);
 
 let pCursor = 0;
-const tmpV = new THREE.Vector3();
-const tmpV2 = new THREE.Vector3();
+const tmpSpawn = new THREE.Vector3();
+const tmpTarget = new THREE.Vector3();
+const tmpDir = new THREE.Vector3();
+const tmpPos = new THREE.Vector3();
 
-function getVideoCornerWorld(isLeft){
-  const x = (isLeft ? -screenW/2 : screenW/2);
-  const y = (-screenH/2);
-  tmpV.set(x, y, 0.0001);
-  screen.localToWorld(tmpV);
-  return tmpV;
+function pickTarget(isRight){
+  // Target = esquina superior correspondiente
+  return isRight ? cornerTR : cornerTL;
 }
 
-function spawnParticlesFrom(worldPos, warm){
+// helper para modo “móvil”
+function pickMobileSpawn(isRight){
+  return isRight ? cornerBR : cornerBL;
+}
+
+// ✅ spawn con “lado” (true = derecha, false = izquierda)
+function spawnParticlesFrom(worldPos, warm, isRightSide){
+  const t = pickTarget(isRightSide);
+
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
 
     alive[i] = P_LIFE;
 
-    positions[i*3+0] = worldPos.x + (Math.random()-0.5)*0.04;
-    positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.04;
-    positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
+    const sx = worldPos.x + (Math.random()-0.5)*0.04;
+    const sy = worldPos.y + (Math.random()-0.5)*0.04;
+    const sz = worldPos.z + (Math.random()-0.5)*0.04;
 
-    velocity[i*3+0] = (Math.random()-0.5)*0.07;
-    velocity[i*3+1] = 0.34 + Math.random()*0.18; // tu velocidad “lenta”
-    velocity[i*3+2] = (Math.random()-0.5)*0.07;
+    positions[i*3+0] = sx;
+    positions[i*3+1] = sy;
+    positions[i*3+2] = sz;
+
+    // velocidad base (atmósfera)
+    let vx = (Math.random()-0.5)*0.07;
+    let vy = 0.34 + Math.random()*0.18;
+    let vz = (Math.random()-0.5)*0.07;
+
+    // ✅ sesgo inicial hacia la esquina superior del vídeo
+    tmpSpawn.set(sx, sy, sz);
+    tmpDir.copy(t).sub(tmpSpawn).normalize();
+
+    vx += tmpDir.x * TARGET_BIAS_PUSH;
+    vy += tmpDir.y * TARGET_BIAS_PUSH;
+    vz += tmpDir.z * TARGET_BIAS_PUSH;
+
+    velocity[i*3+0] = vx;
+    velocity[i*3+1] = vy;
+    velocity[i*3+2] = vz;
+
+    // guardamos target por partícula
+    targetX[i] = t.x;
+    targetY[i] = t.y;
+    targetZ[i] = t.z;
 
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
     colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
 
-    alphas[i] = 1.0; // arranca al 100%
+    alphas[i] = 1.0;
   }
 
   pGeom.attributes.position.needsUpdate = true;
@@ -503,10 +551,23 @@ function updateParticles(dt){
 
     alive[i] -= dt;
 
-    // ✅ fade por alpha (no por negro). Curva suave.
     const a = Math.max(0, alive[i] / P_LIFE);
-    const fade = a * a;       // suave
+    const fade = a * a;
     alphas[i] = fade;
+
+    // ✅ atracción suave hacia la esquina superior (sin parecer misil)
+    tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
+    tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
+    tmpDir.copy(tmpTarget).sub(tmpPos);
+
+    const dist = tmpDir.length();
+    if (dist > 0.001){
+      tmpDir.multiplyScalar(1.0 / dist);
+      const pull = TARGET_ATTRACT * dt; // suave
+      velocity[i*3+0] += tmpDir.x * pull;
+      velocity[i*3+1] += tmpDir.y * pull;
+      velocity[i*3+2] += tmpDir.z * pull;
+    }
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
@@ -594,10 +655,10 @@ function tickHand(times, which, videoTime, midiTime){
           lastPulseRightAt = videoTime;
 
           if (controllerRightObj){
-            controllerRightObj.getWorldPosition(tmpV2);
-            spawnParticlesFrom(tmpV2, 0.55);
+            controllerRightObj.getWorldPosition(tmpSpawn);
+            spawnParticlesFrom(tmpSpawn, 0.55, true); // ✅ derecha -> esquina sup derecha
           } else {
-            spawnParticlesFrom(getVideoCornerWorld(false), 0.55);
+            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           }
         }
         rightIdx++;
@@ -615,14 +676,13 @@ function tickHand(times, which, videoTime, midiTime){
           if (!ok) mobileVibrate();
 
           lastPulseLeftAt = videoTime;
-
           frameEnergy = Math.min(1.0, frameEnergy + 0.16);
 
           if (controllerLeftObj){
-            controllerLeftObj.getWorldPosition(tmpV2);
-            spawnParticlesFrom(tmpV2, 0.90);
+            controllerLeftObj.getWorldPosition(tmpSpawn);
+            spawnParticlesFrom(tmpSpawn, 0.90, false); // ✅ izquierda -> esquina sup izquierda
           } else {
-            spawnParticlesFrom(getVideoCornerWorld(true), 0.90);
+            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           }
         }
         leftIdx++;
@@ -654,6 +714,9 @@ function tickHaptics(videoTime){
 // ==================== RENDER LOOP ====================
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
+
+  // actualizar esquinas (por si mueves pantalla en el futuro)
+  updateVideoCornersWorld();
 
   const t = video.currentTime;
 
