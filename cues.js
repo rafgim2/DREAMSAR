@@ -1,5 +1,5 @@
 // URL del vídeo (GitHub Pages, mismo directorio)
-export const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/dreamurl6.mp4";
+export const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/dream14connombre(1).mp4";
 
 // 8 grupos de versos con segundos exactos
 export const CUES = [
@@ -12,6 +12,7 @@ export const CUES = [
   { t: 125.0, text: ["Cuando la noche lo cubre todo,", "ya no busco luz busco sentido…"] },
   { t: 152.0, text: ["Porque aceptar la oscuridad no es rendirse,", "es comprender que también forma parte de mí…"] },
 ];
+
 
 
 
