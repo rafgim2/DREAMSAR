@@ -368,7 +368,7 @@ const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 
 // ✅ más vida = llegan más arriba
-const P_LIFE = 1.75;
+const P_LIFE = 3.5;
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
@@ -448,7 +448,7 @@ function spawnParticlesFrom(worldPos, warm){
     velocity[i*3+0] = (Math.random()-0.5)*0.07;
 
     // ✅ más empuje vertical para pasar un poco el borde superior del vídeo
-    velocity[i*3+1] = 1.16 + Math.random()*0.72;
+    velocity[i*3+1] = 0.34 + Math.random()*0.18;
 
     velocity[i*3+2] = (Math.random()-0.5)*0.07;
 
@@ -723,5 +723,6 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
+
 
 
