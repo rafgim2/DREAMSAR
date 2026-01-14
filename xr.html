@@ -30,7 +30,9 @@
 <div id="overlay">
   <div class="card">
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
-    <p style="margin:0 0 14px 0;opacity:.9;">Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas del vídeo.</p>
+    <p style="margin:0 0 14px 0;opacity:.9;">
+      Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
+    </p>
 
     <button id="start">▶ Iniciar vídeo</button>
     <button id="enterAR" disabled>Entrar en AR</button>
@@ -121,12 +123,56 @@ video.addEventListener("error", () => {
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
+// ===== Máscara redondeada para recortar el vídeo (mismas esquinas que el marco) =====
+function makeRoundedAlphaMask(size = 512, r = 70){
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const ctx = c.getContext("2d");
+
+  ctx.clearRect(0,0,size,size);
+  ctx.fillStyle = "black";
+  ctx.fillRect(0,0,size,size);
+
+  const x = 0, y = 0, w = size, h = size;
+  const rad = r;
+
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.moveTo(x+rad, y);
+  ctx.lineTo(x+w-rad, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+rad);
+  ctx.lineTo(x+w, y+h-rad);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-rad, y+h);
+  ctx.lineTo(x+rad, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-rad);
+  ctx.lineTo(x, y+rad);
+  ctx.quadraticCurveTo(x, y, x+rad, y);
+  ctx.closePath();
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+// Si quieres más/menos redondo: prueba 60/80
+const videoMaskTex = makeRoundedAlphaMask(512, 70);
+
+// ==================== PANTALLA (vídeo recortado con esquinas redondeadas) ====================
 const screenW = 1.6;
 const screenH = 0.9;
 
+const screenMat = new THREE.MeshBasicMaterial({
+  map: videoTex,
+  alphaMap: videoMaskTex,
+  transparent: true,
+  alphaTest: 0.02, // evita halos raros en el borde
+});
+
 const screen = new THREE.Mesh(
   new THREE.PlaneGeometry(screenW, screenH),
-  new THREE.MeshBasicMaterial({ map: videoTex, transparent:true })
+  screenMat
 );
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
@@ -138,22 +184,14 @@ const cornerBL = new THREE.Vector3();
 const cornerBR = new THREE.Vector3();
 
 function updateVideoCornersWorld(){
-  // top-left
-  cornerTL.set(-screenW/2,  screenH/2, 0.0001);
-  screen.localToWorld(cornerTL);
-  // top-right
-  cornerTR.set( screenW/2,  screenH/2, 0.0001);
-  screen.localToWorld(cornerTR);
-  // bottom-left
-  cornerBL.set(-screenW/2, -screenH/2, 0.0001);
-  screen.localToWorld(cornerBL);
-  // bottom-right
-  cornerBR.set( screenW/2, -screenH/2, 0.0001);
-  screen.localToWorld(cornerBR);
+  cornerTL.set(-screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTL);
+  cornerTR.set( screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTR);
+  cornerBL.set(-screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBL);
+  cornerBR.set( screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBR);
 }
 updateVideoCornersWorld();
 
-// ==================== MARCO REDONDEADO GRADIENTE ====================
+// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
@@ -348,8 +386,6 @@ async function loadMidiTimes(url){
 }
 
 // ==================== CONTROLLERS (Quest) ====================
-let xrSession = null;
-
 const grip0 = renderer.xr.getControllerGrip(0);
 const grip1 = renderer.xr.getControllerGrip(1);
 scene.add(grip0);
@@ -366,7 +402,6 @@ function mapGrips(session){
   for (const src of session.inputSources){
     if (src.targetRayMode === "tracked-pointer") pointers.push(src);
   }
-
   for (let i=0;i<pointers.length;i++){
     const src = pointers[i];
     const obj = (i === 0) ? grip0 : grip1;
@@ -378,15 +413,17 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
-// ==================== PARTÍCULAS (con target hacia pantalla) ====================
+// ==================== PARTÍCULAS (shader + fade perfecto + target esquinas superiores) ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 3.5;
-const PARTICLE_SPEED = 0.55; // velocidad global (0.3–1.0)
 
-// “tendencia” hacia la pantalla:
-const TARGET_BIAS_PUSH = 0.12;   // empuje inicial (sutil)
-const TARGET_ATTRACT   = 0.28;   // atracción durante vida (sutil)
+// ✅ velocidad global del recorrido (tu “perfecto”)
+const PARTICLE_SPEED = 0.55;
+
+// ✅ “tendencia” hacia la esquina superior del vídeo (sutil, no disparadas)
+const TARGET_BIAS_PUSH = 0.045; // empuje inicial (muy suave)
+const TARGET_ATTRACT   = 0.16;  // atracción durante vida (suave)
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
@@ -399,7 +436,6 @@ function makeSpriteTexture(){
   g.addColorStop(1.0,"rgba(255,255,255,0)");
   cx.fillStyle = g;
   cx.fillRect(0,0,64,64);
-
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.minFilter = THREE.LinearFilter;
@@ -414,7 +450,7 @@ const alphas    = new Float32Array(MAX_PARTICLES);
 const alive     = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-// ✅ guardamos target por partícula (izq/dcha)
+// target por partícula
 const targetX = new Float32Array(MAX_PARTICLES);
 const targetY = new Float32Array(MAX_PARTICLES);
 const targetZ = new Float32Array(MAX_PARTICLES);
@@ -483,17 +519,9 @@ const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 
-function pickTarget(isRight){
-  // Target = esquina superior correspondiente
-  return isRight ? cornerTR : cornerTL;
-}
+function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
+function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
 
-// helper para modo “móvil”
-function pickMobileSpawn(isRight){
-  return isRight ? cornerBR : cornerBL;
-}
-
-// ✅ spawn con “lado” (true = derecha, false = izquierda)
 function spawnParticlesFrom(worldPos, warm, isRightSide){
   const t = pickTarget(isRightSide);
 
@@ -511,15 +539,14 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // velocidad base (atmósfera)
+    // base suave (no tocar si te gusta el carácter)
     let vx = (Math.random()-0.5)*0.07;
     let vy = 0.34 + Math.random()*0.18;
     let vz = (Math.random()-0.5)*0.07;
 
-    // ✅ sesgo inicial hacia la esquina superior del vídeo
+    // sesgo inicial hacia la esquina superior
     tmpSpawn.set(sx, sy, sz);
     tmpDir.copy(t).sub(tmpSpawn).normalize();
-
     vx += tmpDir.x * TARGET_BIAS_PUSH;
     vy += tmpDir.y * TARGET_BIAS_PUSH;
     vz += tmpDir.z * TARGET_BIAS_PUSH;
@@ -528,7 +555,6 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
     velocity[i*3+1] = vy;
     velocity[i*3+2] = vz;
 
-    // guardamos target por partícula
     targetX[i] = t.x;
     targetY[i] = t.y;
     targetZ[i] = t.z;
@@ -553,10 +579,10 @@ function updateParticles(dt){
     alive[i] -= dt;
 
     const a = Math.max(0, alive[i] / P_LIFE);
-    const fade = a * a;
+    const fade = a * a; // suave
     alphas[i] = fade;
 
-    // ✅ atracción suave hacia la esquina superior (sin parecer misil)
+    // atracción suave hacia la esquina superior
     tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
     tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
     tmpDir.copy(tmpTarget).sub(tmpPos);
@@ -564,17 +590,18 @@ function updateParticles(dt){
     const dist = tmpDir.length();
     if (dist > 0.001){
       tmpDir.multiplyScalar(1.0 / dist);
-      const pull = TARGET_ATTRACT * dt; // suave
+      const pull = TARGET_ATTRACT * dt;
       velocity[i*3+0] += tmpDir.x * pull;
       velocity[i*3+1] += tmpDir.y * pull;
       velocity[i*3+2] += tmpDir.z * pull;
     }
 
-positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
-positions[i*3+1] += velocity[i*3+1] * dt * PARTICLE_SPEED;
-positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
+    // ✅ velocidad global del recorrido (lo que te quitaba “rapidez”)
+    positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
+    positions[i*3+1] += velocity[i*3+1] * dt * PARTICLE_SPEED;
+    positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
 
-
+    // fricción
     velocity[i*3+0] *= (1 - dt*1.05);
     velocity[i*3+1] *= (1 - dt*0.55);
     velocity[i*3+2] *= (1 - dt*1.05);
@@ -584,7 +611,6 @@ positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
       alphas[i] = 0;
     }
   }
-
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
@@ -658,9 +684,9 @@ function tickHand(times, which, videoTime, midiTime){
 
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpSpawn);
-            spawnParticlesFrom(tmpSpawn, 0.55, true); // ✅ derecha -> esquina sup derecha
+            spawnParticlesFrom(tmpSpawn, 0.55, true); // derecha -> sup derecha
           } else {
-            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
+            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true); // móvil -> esquina inf derecha (target sup derecha)
           }
         }
         rightIdx++;
@@ -682,9 +708,9 @@ function tickHand(times, which, videoTime, midiTime){
 
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpSpawn);
-            spawnParticlesFrom(tmpSpawn, 0.90, false); // ✅ izquierda -> esquina sup izquierda
+            spawnParticlesFrom(tmpSpawn, 0.90, false); // izquierda -> sup izquierda
           } else {
-            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
+            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false); // móvil -> esquina inf izquierda (target sup izquierda)
           }
         }
         leftIdx++;
@@ -698,6 +724,7 @@ function tickHand(times, which, videoTime, midiTime){
 function tickHaptics(videoTime){
   if (rightTimes.length === 0 && leftTimes.length === 0) return;
 
+  // si el vídeo vuelve a 0 por loop
   if (videoTime + 0.05 < lastVideoTimeForLoop){
     const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
     const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
@@ -717,7 +744,7 @@ function tickHaptics(videoTime){
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
 
-  // actualizar esquinas (por si mueves pantalla en el futuro)
+  // por si en el futuro mueves el vídeo, mantenemos corners actualizados
   updateVideoCornersWorld();
 
   const t = video.currentTime;
@@ -729,10 +756,11 @@ renderer.setAnimationLoop(()=>{
 
   const dt = Math.max(0, t - prevVideoT);
   prevVideoT = t;
-  stepType(dt);
 
+  stepType(dt);
   tickHaptics(t);
 
+  // marco gradiente sutil
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
@@ -752,7 +780,6 @@ async function enter(mode){
   const s = await navigator.xr.requestSession(mode,{
     optionalFeatures:["local-floor","bounded-floor","hand-tracking"]
   });
-  xrSession = s;
   renderer.xr.setSession(s);
 
   mapGrips(s);
@@ -829,6 +856,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
-
-
