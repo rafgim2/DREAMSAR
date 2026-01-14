@@ -363,9 +363,12 @@ function mapGrips(session){
 }
 
 // ==================== PARTÍCULAS ====================
-const MAX_PARTICLES = 240;
+// Ajuste para que lleguen hasta un poco por encima del borde superior del vídeo:
+const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
-const P_LIFE = 1.25;
+
+// ✅ más vida = llegan más arriba
+const P_LIFE = 1.75;
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
@@ -422,12 +425,11 @@ let pCursor = 0;
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 
-// Calcula esquina inferior izquierda/derecha del vídeo en WORLD
+// Esquinas inferiores del vídeo en WORLD (para modo móvil)
 function getVideoCornerWorld(isLeft){
-  // screen plane local corners
   const x = (isLeft ? -screenW/2 : screenW/2);
   const y = (-screenH/2);
-  tmpV.set(x, y, 0.0001);         // un pelín delante del plano
+  tmpV.set(x, y, 0.0001);
   screen.localToWorld(tmpV);
   return tmpV;
 }
@@ -443,9 +445,12 @@ function spawnParticlesFrom(worldPos, warm){
     positions[i*3+1] = worldPos.y + (Math.random()-0.5)*0.04;
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
-    velocity[i*3+0] = (Math.random()-0.5)*0.08;
-    velocity[i*3+1] = 0.22 + Math.random()*0.14;
-    velocity[i*3+2] = (Math.random()-0.5)*0.08;
+    velocity[i*3+0] = (Math.random()-0.5)*0.07;
+
+    // ✅ más empuje vertical para pasar un poco el borde superior del vídeo
+    velocity[i*3+1] = 0.34 + Math.random()*0.18;
+
+    velocity[i*3+2] = (Math.random()-0.5)*0.07;
 
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
@@ -466,9 +471,10 @@ function updateParticles(dt){
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    velocity[i*3+0] *= (1 - dt*1.1);
-    velocity[i*3+1] *= (1 - dt*0.7);
-    velocity[i*3+2] *= (1 - dt*1.1);
+    // fricción suave (ligeramente menor para que mantengan altura)
+    velocity[i*3+0] *= (1 - dt*1.05);
+    velocity[i*3+1] *= (1 - dt*0.55);
+    velocity[i*3+2] *= (1 - dt*1.05);
 
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
@@ -480,7 +486,6 @@ function updateParticles(dt){
 // ==================== VIBRACIÓN MÓVIL ====================
 let lastMobileVibeAt = -999;
 function mobileVibrate(){
-  // Solo si el navegador lo soporta (en iOS normalmente no)
   if (!("vibrate" in navigator)) return;
   const now = performance.now() / 1000;
   if (now - lastMobileVibeAt < MOBILE_MIN_GAP) return;
@@ -542,19 +547,14 @@ function tickHand(times, which, videoTime, midiTime){
       const diff = nt - midiTime;
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseRightAt > MIN_PULSE_GAP){
-          // vibración mando derecho si existe
           pulseController(rightHaptic);
           lastPulseRightAt = videoTime;
 
-          // partículas:
-          // - Quest: desde mando derecho
-          // - móvil: desde esquina inferior derecha del vídeo
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpV2);
             spawnParticlesFrom(tmpV2, 0.55);
           } else {
-            const p = getVideoCornerWorld(false);
-            spawnParticlesFrom(p, 0.55);
+            spawnParticlesFrom(getVideoCornerWorld(false), 0.55);
           }
         }
         rightIdx++;
@@ -568,24 +568,18 @@ function tickHand(times, which, videoTime, midiTime){
       const diff = nt - midiTime;
       if (diff <= HAPTIC_WINDOW){
         if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
-          // intento vibrar mando izquierdo; si no hay, vibra el móvil
           const ok = pulseController(leftHaptic);
           if (!ok) mobileVibrate();
 
           lastPulseLeftAt = videoTime;
 
-          // reacciona el marco sutilmente con la izquierda
           frameEnergy = Math.min(1.0, frameEnergy + 0.16);
 
-          // partículas:
-          // - Quest: desde mando izquierdo
-          // - móvil: desde esquina inferior izquierda del vídeo
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpV2);
             spawnParticlesFrom(tmpV2, 0.90);
           } else {
-            const p = getVideoCornerWorld(true);
-            spawnParticlesFrom(p, 0.90);
+            spawnParticlesFrom(getVideoCornerWorld(true), 0.90);
           }
         }
         leftIdx++;
@@ -671,7 +665,6 @@ btnStart.onclick = async () => {
     loadPristinaFontNonBlocking();
     drawGradient(0, 0);
 
-    // en móvil el play suele necesitar gesto: este botón lo es
     video.muted = false;
     video.volume = 1.0;
     await video.play();
@@ -692,8 +685,6 @@ btnStart.onclick = async () => {
       leftIdx  = resyncIndex(leftTimes,  ml);
 
       log("🟣 Listo. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
-
-      // info vibración móvil
       log(("vibrate" in navigator) ? "📳 Vibración móvil disponible" : "ℹ️ Vibración móvil NO disponible (iOS suele bloquear)");
     }catch(e){
       log("⚠️ MIDI/háptica no disponibles: " + (e?.message || e));
