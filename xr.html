@@ -362,14 +362,12 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
-// ==================== PARTÍCULAS ====================
-// Ajuste para que lleguen hasta un poco por encima del borde superior del vídeo:
+// ==================== PARTÍCULAS (con FADE OUT) ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
+const P_LIFE = 3.5; // ✅ tu ajuste (doble duración)
 
-// ✅ más vida = llegan más arriba
-const P_LIFE = 3.5;
-
+// Sprite
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -386,10 +384,11 @@ function makeSpriteTexture(){
 }
 const spriteTex = makeSpriteTexture();
 
-const positions = new Float32Array(MAX_PARTICLES * 3);
-const colors    = new Float32Array(MAX_PARTICLES * 3);
-const alive     = new Float32Array(MAX_PARTICLES);
-const velocity  = new Float32Array(MAX_PARTICLES * 3);
+const positions  = new Float32Array(MAX_PARTICLES * 3);
+const colors     = new Float32Array(MAX_PARTICLES * 3);
+const baseColors = new Float32Array(MAX_PARTICLES * 3); // ✅ base para fade limpio
+const alive      = new Float32Array(MAX_PARTICLES);
+const velocity   = new Float32Array(MAX_PARTICLES * 3);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -412,9 +411,13 @@ for (let i=0;i<MAX_PARTICLES;i++){
   positions[i*3+0] = 0;
   positions[i*3+1] = -999;
   positions[i*3+2] = 0;
-  colors[i*3+0] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
+
+  // inicial
+  baseColors[i*3+0] = 1; baseColors[i*3+1] = 1; baseColors[i*3+2] = 1;
+  colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
 }
 pGeom.attributes.position.needsUpdate = true;
+pGeom.attributes.color.needsUpdate = true;
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -447,15 +450,25 @@ function spawnParticlesFrom(worldPos, warm){
 
     velocity[i*3+0] = (Math.random()-0.5)*0.07;
 
-    // ✅ más empuje vertical para pasar un poco el borde superior del vídeo
+    // velocidad vertical (se mantiene igual: suben igual de lentas)
     velocity[i*3+1] = 0.34 + Math.random()*0.18;
 
     velocity[i*3+2] = (Math.random()-0.5)*0.07;
 
+    // color base cálido
     const b = 0.75 + warm*0.25;
-    colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
-    colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
+    const r = 1.0 * b;
+    const g = (0.55 + 0.35*Math.random()) * b;
+    const bl = (0.12 + 0.14*Math.random()) * b;
+
+    baseColors[i*3+0] = r;
+    baseColors[i*3+1] = g;
+    baseColors[i*3+2] = bl;
+
+    // color visible arranca a tope
+    colors[i*3+0] = r;
+    colors[i*3+1] = g;
+    colors[i*3+2] = bl;
   }
 
   pGeom.attributes.position.needsUpdate = true;
@@ -465,22 +478,33 @@ function spawnParticlesFrom(worldPos, warm){
 function updateParticles(dt){
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
+
     alive[i] -= dt;
+
+    // ✅ fade out por brillo (ideal en passthrough)
+    const a = Math.max(0, alive[i] / P_LIFE);
+    const fade = a * a; // suave
+
+    colors[i*3+0] = baseColors[i*3+0] * fade;
+    colors[i*3+1] = baseColors[i*3+1] * fade;
+    colors[i*3+2] = baseColors[i*3+2] * fade;
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    // fricción suave (ligeramente menor para que mantengan altura)
+    // fricción suave
     velocity[i*3+0] *= (1 - dt*1.05);
     velocity[i*3+1] *= (1 - dt*0.55);
     velocity[i*3+2] *= (1 - dt*1.05);
 
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
+      colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
     }
   }
   pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true; // ✅ importante (fade cada frame)
 }
 
 // ==================== VIBRACIÓN MÓVIL ====================
@@ -723,6 +747,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
-
-
