@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>XR AR Video + MIDI + Marco + Partículas (Quest y móvil)</title>
+<title>XR AR Video + MIDI + Marco + Partículas + Cometa Intro (Quest y móvil)</title>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
@@ -32,6 +32,7 @@
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
+      Intro: cometa siguiendo el marco redondeado y viniendo hacia el espectador.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -123,7 +124,7 @@ video.addEventListener("error", () => {
 const videoTex = new THREE.VideoTexture(video);
 videoTex.colorSpace = THREE.SRGBColorSpace;
 
-// ===== Máscara redondeada para recortar el vídeo (mismas esquinas que el marco) =====
+// ===== Máscara redondeada para recortar el vídeo =====
 function makeRoundedAlphaMask(size = 512, r = 70){
   const c = document.createElement("canvas");
   c.width = size; c.height = size;
@@ -156,10 +157,9 @@ function makeRoundedAlphaMask(size = 512, r = 70){
   tex.generateMipmaps = false;
   return tex;
 }
-// Si quieres más/menos redondo: prueba 60/80
 const videoMaskTex = makeRoundedAlphaMask(512, 50);
 
-// ==================== PANTALLA (vídeo recortado con esquinas redondeadas) ====================
+// ==================== PANTALLA ====================
 const screenW = 1.6;
 const screenH = 0.9;
 
@@ -167,7 +167,7 @@ const screenMat = new THREE.MeshBasicMaterial({
   map: videoTex,
   alphaMap: videoMaskTex,
   transparent: true,
-  alphaTest: 0.02, // evita halos raros en el borde
+  alphaTest: 0.02,
 });
 
 const screen = new THREE.Mesh(
@@ -191,7 +191,7 @@ function updateVideoCornersWorld(){
 }
 updateVideoCornersWorld();
 
-// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
+// ==================== MARCO REDONDEADO GRADIENTE ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
@@ -418,30 +418,39 @@ const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 10;
 
-// ✅ velocidad global del recorrido (tu “perfecto”)
 const PARTICLE_SPEED = 0.55;
+const TARGET_BIAS_PUSH = 0.045;
+const TARGET_ATTRACT   = 0.20;
 
-// ✅ “tendencia” hacia la esquina superior del vídeo (sutil, no disparadas)
-const TARGET_BIAS_PUSH = 0.045; // empuje inicial (muy suave)
-const TARGET_ATTRACT   = 0.20;  // atracción durante vida (suave)
-
-// ==================== EXTRA: PARTÍCULAS "EN EL AIRE" (disparadas por MIDI IZQUIERDO) ====================
-// Nacen delante de la cámara (zona visible) y van a la esquina superior izquierda igual que las del mando.
-
+// ==================== EXTRA: PARTÍCULAS "EN EL AIRE" (MIDI IZQUIERDO) ====================
 const LEFT_VIEWER_PARTICLES = true;
+const LEFT_VIEWER_SPAWNS_PER_HIT = 1;
+const LEFT_VIEWER_SPAWN_PROB = 0.85;
 
-// cuántos "spawns" extra por nota izquierda (cada spawn llama a spawnParticlesFrom → crea P_SPAWN partículas)
-const LEFT_VIEWER_SPAWNS_PER_HIT = 1;   // 1 suele quedar muy bien (porque ya genera P_SPAWN partículas)
-const LEFT_VIEWER_SPAWN_PROB = 0.85;    // 0..1 (para no saturar)
-
-// Volumen delante de la cámara (metros)
 const VIEWER_Z_NEAR = 0.55;
 const VIEWER_Z_FAR  = 1.35;
 const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
+const VIEWER_CENTER_HOLE = 0.18;
 
-// Evita que nazcan justo en el centro (queda más "atmósfera" y menos "moscas en la cara")
-const VIEWER_CENTER_HOLE = 0.18; // 0..1
+// ==================== COMETA INTRO (sin MIDI) ====================
+const INTRO_NO_MIDI_SECONDS = 14.0;
+const COMET_ENABLED = true;
+
+// 0..1: proporción de intro que recorre el marco (resto viene al espectador)
+const COMET_FRAME_PHASE = 0.83;
+
+// Sprite cometa
+const COMET_SPRITE_SCALE = 0.14;
+
+// Rastro
+const COMET_TRAIL_RATE = 55;     // partículas por segundo (realmente spawns en pool)
+const COMET_TRAIL_LIFE = 1.15;   // segundos
+const COMET_TRAIL_WARM = 0.90;
+
+// Final delante del usuario
+const COMET_END_Z = 0.55;
+const COMET_END_Y = 0.06;
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
@@ -466,6 +475,7 @@ const positions = new Float32Array(MAX_PARTICLES * 3);
 const colors    = new Float32Array(MAX_PARTICLES * 3);
 const alphas    = new Float32Array(MAX_PARTICLES);
 const alive     = new Float32Array(MAX_PARTICLES);
+const maxLife   = new Float32Array(MAX_PARTICLES); // ✅ vida máxima por partícula
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
 // target por partícula
@@ -480,6 +490,7 @@ pGeom.setAttribute("aAlpha",   new THREE.BufferAttribute(alphas, 1));
 
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
+  maxLife[i] = P_LIFE;
   positions[i*3+0] = 0;
   positions[i*3+1] = -999;
   positions[i*3+2] = 0;
@@ -531,15 +542,52 @@ points.frustumCulled = false;
 points.renderOrder = 999;
 scene.add(points);
 
+// ==================== SPRITE COMETA ====================
+const cometMat = new THREE.SpriteMaterial({
+  map: spriteTex,
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: THREE.AdditiveBlending,
+  opacity: 0.0
+});
+const cometSprite = new THREE.Sprite(cometMat);
+cometSprite.visible = false;
+cometSprite.renderOrder = 1000;
+scene.add(cometSprite);
+
+// ==================== TEMP VECTORS ====================
 let pCursor = 0;
 const tmpSpawn = new THREE.Vector3();
 const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 
+// camera space helpers (se usan para viewer particles + comet end)
+const tmpCamDir   = new THREE.Vector3();
+const tmpCamUp    = new THREE.Vector3();
+const tmpCamRight = new THREE.Vector3();
+const tmpViewerPos = new THREE.Vector3();
+
+// comet helpers
+let cometTrailAcc = 0;
+let cometInited = false;
+const cometPos = new THREE.Vector3();
+const cometPrev = new THREE.Vector3();
+const cometDir  = new THREE.Vector3();
+const tmpViewerEnd = new THREE.Vector3();
+const tmpLocal = new THREE.Vector3();
+
+// ==================== UTILIDADES ====================
 function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
 function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
 
+function smoothstep01(x){
+  x = Math.max(0, Math.min(1, x));
+  return x*x*(3 - 2*x);
+}
+
+// ==================== SPAWN PRINCIPAL (haptics / mobile / viewer) ====================
 function spawnParticlesFrom(worldPos, warm, isRightSide){
   const t = pickTarget(isRightSide);
 
@@ -548,6 +596,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
     pCursor = (pCursor + 1) % MAX_PARTICLES;
 
     alive[i] = P_LIFE;
+    maxLife[i] = P_LIFE;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.04;
     const sy = worldPos.y + (Math.random()-0.5)*0.04;
@@ -557,12 +606,10 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // base suave (no tocar si te gusta el carácter)
     let vx = (Math.random()-0.5)*0.07;
     let vy = 0.34 + Math.random()*0.18;
     let vz = (Math.random()-0.5)*0.07;
 
-    // sesgo inicial hacia la esquina superior
     tmpSpawn.set(sx, sy, sz);
     tmpDir.copy(t).sub(tmpSpawn).normalize();
     vx += tmpDir.x * TARGET_BIAS_PUSH;
@@ -596,11 +643,11 @@ function updateParticles(dt){
 
     alive[i] -= dt;
 
-    const a = Math.max(0, alive[i] / P_LIFE);
-    const fade = a * a; // suave
+    const ml = Math.max(0.001, maxLife[i]);
+    const a = Math.max(0, alive[i] / ml);
+    const fade = a * a;
     alphas[i] = fade;
 
-    // atracción suave hacia la esquina superior
     tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
     tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
     tmpDir.copy(tmpTarget).sub(tmpPos);
@@ -614,12 +661,10 @@ function updateParticles(dt){
       velocity[i*3+2] += tmpDir.z * pull;
     }
 
-    // ✅ velocidad global del recorrido (lo que te quitaba “rapidez”)
     positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
     positions[i*3+1] += velocity[i*3+1] * dt * PARTICLE_SPEED;
     positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
 
-    // fricción
     velocity[i*3+0] *= (1 - dt*1.05);
     velocity[i*3+1] *= (1 - dt*0.55);
     velocity[i*3+2] *= (1 - dt*1.05);
@@ -633,23 +678,15 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// --------- Helpers para spawn "en el aire" (delante de la cámara) ----------
-const tmpCamDir   = new THREE.Vector3();
-const tmpCamUp    = new THREE.Vector3();
-const tmpCamRight = new THREE.Vector3();
-const tmpViewerPos = new THREE.Vector3();
-
+// ==================== VIEWER PARTICLES (por MIDI izquierdo) ====================
 function randomViewerWorldPos(out){
-  // Base de cámara en mundo (reutilizo tmpPos como "camPos" para no crear basura)
   const camPos = camera.getWorldPosition(tmpPos);
   camera.getWorldDirection(tmpCamDir).normalize();
   tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
   tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
 
-  // Profundidad delante del usuario
   const z = VIEWER_Z_NEAR + Math.random() * (VIEWER_Z_FAR - VIEWER_Z_NEAR);
 
-  // Spread (x/y) con agujero central
   let nx = (Math.random()*2 - 1);
   let ny = (Math.random()*2 - 1);
 
@@ -677,9 +714,217 @@ function spawnLeftViewerParticles(){
 
   for (let s=0; s<LEFT_VIEWER_SPAWNS_PER_HIT; s++){
     randomViewerWorldPos(tmpViewerPos);
-    // warm alto (como izquierda) y lado "false" => target cornerTL (tu pickTarget)
     spawnParticlesFrom(tmpViewerPos, 0.90, false);
   }
+}
+
+// ==================== COMETA: RECORRIDO ELEGANTE POR MARCO REDONDEADO REAL ====================
+// Recorre el perímetro de un rectángulo redondeado (outerW/outerH/radius) en coordenadas LOCALES de frameGroup,
+// luego lo convertimos a WORLD con frameGroup.localToWorld(). Esto hace que siga el marco redondeado "de verdad".
+
+function roundedRectPerimeterPoint(u, outWorld){
+  // u: 0..1
+  u = ((u % 1) + 1) % 1;
+
+  const hw = outerW * 0.5;
+  const hh = outerH * 0.5;
+  const r  = Math.min(radius, hw - 0.001, hh - 0.001);
+
+  const topLen = (outerW - 2*r);
+  const sideLen = (outerH - 2*r);
+  const arcLen = (Math.PI * 0.5) * r;
+
+  const total = 2*topLen + 2*sideLen + 4*arcLen;
+
+  let s = u * total;
+
+  // Helper: set local then to world
+  const setLocalToWorld = (x,y)=>{
+    tmpLocal.set(x, y, zFront);
+    outWorld.copy(tmpLocal);
+    frameGroup.localToWorld(outWorld);
+    return outWorld;
+  };
+
+  // Segment order (clockwise):
+  // 1) top edge (left->right) at y=+hh from x=-hw+r .. +hw-r
+  if (s <= topLen){
+    const x = (-hw + r) + (s / topLen) * topLen;
+    return setLocalToWorld(x, +hh);
+  }
+  s -= topLen;
+
+  // 2) top-right arc center (hw-r, hh-r) angle from +90° to 0°
+  if (s <= arcLen){
+    const a = (Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
+    const cx = (hw - r), cy = (hh - r);
+    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
+  }
+  s -= arcLen;
+
+  // 3) right edge (top->bottom) at x=+hw from y=+hh-r .. -hh+r
+  if (s <= sideLen){
+    const y = (+hh - r) - (s / sideLen) * sideLen;
+    return setLocalToWorld(+hw, y);
+  }
+  s -= sideLen;
+
+  // 4) bottom-right arc center (hw-r, -hh+r) angle from 0° to -90°
+  if (s <= arcLen){
+    const a = 0 - (s / arcLen) * (Math.PI*0.5);
+    const cx = (hw - r), cy = (-hh + r);
+    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
+  }
+  s -= arcLen;
+
+  // 5) bottom edge (right->left) at y=-hh from x=+hw-r .. -hw+r
+  if (s <= topLen){
+    const x = (+hw - r) - (s / topLen) * topLen;
+    return setLocalToWorld(x, -hh);
+  }
+  s -= topLen;
+
+  // 6) bottom-left arc center (-hw+r, -hh+r) angle from -90° to -180°
+  if (s <= arcLen){
+    const a = (-Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
+    const cx = (-hw + r), cy = (-hh + r);
+    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
+  }
+  s -= arcLen;
+
+  // 7) left edge (bottom->top) at x=-hw from y=-hh+r .. +hh-r
+  if (s <= sideLen){
+    const y = (-hh + r) + (s / sideLen) * sideLen;
+    return setLocalToWorld(-hw, y);
+  }
+  s -= sideLen;
+
+  // 8) top-left arc center (-hw+r, hh-r) angle from -180° to -270° (o +180° a +90°)
+  // Lo cierro hasta llegar al inicio.
+  {
+    const a = (-Math.PI) - (s / arcLen) * (Math.PI*0.5);
+    const cx = (-hw + r), cy = (hh - r);
+    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
+  }
+}
+
+function viewerEndWorldPos(out){
+  const camPos = camera.getWorldPosition(tmpPos);
+  camera.getWorldDirection(tmpCamDir).normalize();
+  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
+  out.copy(camPos)
+    .addScaledVector(tmpCamDir, COMET_END_Z)
+    .addScaledVector(tmpCamUp, COMET_END_Y);
+  return out;
+}
+
+function spawnCometTrail(worldPos, dt){
+  cometTrailAcc += dt * COMET_TRAIL_RATE;
+  const n = Math.floor(cometTrailAcc);
+  if (n <= 0) return;
+  cometTrailAcc -= n;
+
+  // Dirección
+  cometDir.copy(worldPos).sub(cometPrev);
+  const len = cometDir.length();
+  if (len > 0.0001) cometDir.multiplyScalar(1 / len);
+  else cometDir.set(0, 1, 0);
+
+  for (let s=0; s<n; s++){
+    const i = pCursor;
+    pCursor = (pCursor + 1) % MAX_PARTICLES;
+
+    alive[i] = COMET_TRAIL_LIFE;
+    maxLife[i] = COMET_TRAIL_LIFE;
+
+    const sx = worldPos.x + (Math.random()-0.5)*0.018;
+    const sy = worldPos.y + (Math.random()-0.5)*0.018;
+    const sz = worldPos.z + (Math.random()-0.5)*0.018;
+
+    positions[i*3+0] = sx;
+    positions[i*3+1] = sy;
+    positions[i*3+2] = sz;
+
+    // back drift + float
+    const back = 0.55 + Math.random()*0.40;
+    const vx = -cometDir.x * back + (Math.random()-0.5)*0.06;
+    const vy = -cometDir.y * back + (0.12 + Math.random()*0.18);
+    const vz = -cometDir.z * back + (Math.random()-0.5)*0.06;
+
+    velocity[i*3+0] = vx;
+    velocity[i*3+1] = vy;
+    velocity[i*3+2] = vz;
+
+    // Para que NO tire a esquina: target = propio punto
+    targetX[i] = sx;
+    targetY[i] = sy;
+    targetZ[i] = sz;
+
+    const b = 0.75 + COMET_TRAIL_WARM*0.25;
+    colors[i*3+0] = 1.0 * b;
+    colors[i*3+1] = (0.65 + 0.25*Math.random()) * b;
+    colors[i*3+2] = (0.18 + 0.18*Math.random()) * b;
+
+    alphas[i] = 1.0;
+  }
+
+  pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
+  pGeom.attributes.aAlpha.needsUpdate = true;
+}
+
+function updateCometIntro(t, dt){
+  if (!COMET_ENABLED) { cometSprite.visible = false; cometMat.opacity = 0.0; return; }
+  if (t >= INTRO_NO_MIDI_SECONDS){
+    cometSprite.visible = false;
+    cometMat.opacity = 0.0;
+    cometInited = false;
+    return;
+  }
+
+  cometSprite.visible = true;
+
+  const p = Math.max(0, Math.min(1, t / INTRO_NO_MIDI_SECONDS));
+  const fadeIn  = smoothstep01(p / 0.10);
+  const fadeOut = 1.0 - smoothstep01((p - 0.93) / 0.07);
+  cometMat.opacity = 0.95 * fadeIn * fadeOut;
+
+  // Movimiento más impactante:
+  // - En marco: 1.35 vueltas, con easing y un pequeño "acelerón" al final
+  // - Luego se despega hacia el usuario con un smoothstep
+  if (p <= COMET_FRAME_PHASE){
+    const u = p / COMET_FRAME_PHASE;                 // 0..1
+    const ease = smoothstep01(u);
+    const turns = 1.35;
+    const loopU = (ease * turns) % 1.0;
+    roundedRectPerimeterPoint(loopU, cometPos);
+
+    // Guardamos el último punto de marco para que el despegue salga perfecto
+    cometPrev.copy(cometPos);
+  } else {
+    const u2 = (p - COMET_FRAME_PHASE) / (1.0 - COMET_FRAME_PHASE);
+    const s = smoothstep01(u2);
+
+    // Punto de salida del marco: justo donde estaba al acabar la fase marco
+    // Si por lo que sea no está init, lo recalculamos.
+    const start = cometInited ? cometPrev : roundedRectPerimeterPoint(0.0, tmpSpawn);
+
+    viewerEndWorldPos(tmpViewerEnd);
+    cometPos.copy(start).lerp(tmpViewerEnd, s);
+  }
+
+  // sprite
+  cometSprite.position.copy(cometPos);
+  const pulse = 0.82 + 0.18*Math.sin(t * 6.5);
+  cometSprite.scale.setScalar(COMET_SPRITE_SCALE * pulse);
+
+  // rastro
+  if (!cometInited){
+    cometPrev.copy(cometPos);
+    cometInited = true;
+  }
+  spawnCometTrail(cometPos, dt);
+  cometPrev.copy(cometPos);
 }
 
 // ==================== VIBRACIÓN MÓVIL ====================
@@ -751,9 +996,9 @@ function tickHand(times, which, videoTime, midiTime){
 
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpSpawn);
-            spawnParticlesFrom(tmpSpawn, 0.55, true); // derecha -> sup derecha
+            spawnParticlesFrom(tmpSpawn, 0.55, true);
           } else {
-            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true); // móvil -> esquina inf derecha (target sup derecha)
+            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           }
         }
         rightIdx++;
@@ -775,12 +1020,12 @@ function tickHand(times, which, videoTime, midiTime){
 
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpSpawn);
-            spawnParticlesFrom(tmpSpawn, 0.90, false); // izquierda -> sup izquierda
+            spawnParticlesFrom(tmpSpawn, 0.90, false);
           } else {
-            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false); // móvil -> esquina inf izquierda (target sup izquierda)
+            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           }
 
-          // ✅ NUEVO: partículas extra “en el aire” delante del espectador (mismo MIDI izquierdo)
+          // partículas extra delante del espectador (MIDI izq)
           spawnLeftViewerParticles();
         }
         leftIdx++;
@@ -794,7 +1039,6 @@ function tickHand(times, which, videoTime, midiTime){
 function tickHaptics(videoTime){
   if (rightTimes.length === 0 && leftTimes.length === 0) return;
 
-  // si el vídeo vuelve a 0 por loop
   if (videoTime + 0.05 < lastVideoTimeForLoop){
     const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
     const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
@@ -814,7 +1058,6 @@ function tickHaptics(videoTime){
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
 
-  // por si en el futuro mueves el vídeo, mantenemos corners actualizados
   updateVideoCornersWorld();
 
   const t = video.currentTime;
@@ -828,16 +1071,20 @@ renderer.setAnimationLoop(()=>{
   prevVideoT = t;
 
   stepType(dt);
+
+  // MIDI/haptics
   tickHaptics(t);
 
-  // marco gradiente sutil
+  // COMETA INTRO (antes de que haya MIDI)
+  updateCometIntro(t, dt);
+
+  // marco gradiente
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
   updateParticles(dt);
-
   renderer.render(scene, camera);
 });
 
