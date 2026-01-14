@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>XR AR Video + MIDI + Marco + Partículas + Cometa Intro (Quest y móvil)</title>
+<title>XR AR Video + MIDI + Marco + Partículas + Cometa Intro (1 vuelta + rastro hacia espectador)</title>
 
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
@@ -32,7 +32,7 @@
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
-      Intro: cometa siguiendo el marco redondeado y viniendo hacia el espectador.
+      Intro (0–14s): cometa 1 vuelta por el marco redondeado, rastro abundante que se acerca al espectador.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -413,7 +413,7 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
-// ==================== PARTÍCULAS (shader + fade perfecto + target esquinas superiores) ====================
+// ==================== PARTÍCULAS ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 10;
@@ -433,22 +433,22 @@ const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
 const VIEWER_CENTER_HOLE = 0.18;
 
-// ==================== COMETA INTRO (sin MIDI) ====================
+// ==================== COMETA INTRO (0–14s) ====================
+// - 1 vuelta entera al marco redondeado (sin acercarse el sprite cometa)
+// - rastro MUCHO más abundante
+// - el rastro (partículas) se va acercando al espectador (target = punto delante de cámara)
 const INTRO_NO_MIDI_SECONDS = 14.0;
 const COMET_ENABLED = true;
-
-// 0..1: proporción de intro que recorre el marco (resto viene al espectador)
-const COMET_FRAME_PHASE = 0.83;
-
-// Sprite cometa
+const COMET_TURNS = 1.0;            // 1 vuelta exacta
 const COMET_SPRITE_SCALE = 0.14;
 
-// Rastro
-const COMET_TRAIL_RATE = 55;     // partículas por segundo (realmente spawns en pool)
-const COMET_TRAIL_LIFE = 1.15;   // segundos
-const COMET_TRAIL_WARM = 0.90;
+// MÁS rastro
+const COMET_TRAIL_RATE = 170;       // (↑) densidad: 120..220
+const COMET_TRAIL_LIFE = 1.85;      // (↑) vida: 1.2..2.4
+const COMET_TRAIL_WARM = 0.95;
 
-// Final delante del usuario
+// Hacia espectador (target)
+const COMET_TRAIL_TO_VIEWER_PULL = 1.65; // (↑) fuerza extra hacia espectador en velocidad inicial
 const COMET_END_Z = 0.55;
 const COMET_END_Y = 0.06;
 
@@ -475,7 +475,7 @@ const positions = new Float32Array(MAX_PARTICLES * 3);
 const colors    = new Float32Array(MAX_PARTICLES * 3);
 const alphas    = new Float32Array(MAX_PARTICLES);
 const alive     = new Float32Array(MAX_PARTICLES);
-const maxLife   = new Float32Array(MAX_PARTICLES); // ✅ vida máxima por partícula
+const maxLife   = new Float32Array(MAX_PARTICLES); // vida máxima por partícula
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
 // target por partícula
@@ -563,20 +563,19 @@ const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 
-// camera space helpers (se usan para viewer particles + comet end)
 const tmpCamDir   = new THREE.Vector3();
 const tmpCamUp    = new THREE.Vector3();
 const tmpCamRight = new THREE.Vector3();
 const tmpViewerPos = new THREE.Vector3();
 
-// comet helpers
+const tmpViewerEnd = new THREE.Vector3();
+const tmpLocal = new THREE.Vector3();
+
 let cometTrailAcc = 0;
 let cometInited = false;
 const cometPos = new THREE.Vector3();
 const cometPrev = new THREE.Vector3();
 const cometDir  = new THREE.Vector3();
-const tmpViewerEnd = new THREE.Vector3();
-const tmpLocal = new THREE.Vector3();
 
 // ==================== UTILIDADES ====================
 function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
@@ -587,7 +586,7 @@ function smoothstep01(x){
   return x*x*(3 - 2*x);
 }
 
-// ==================== SPAWN PRINCIPAL (haptics / mobile / viewer) ====================
+// ==================== SPAWN PRINCIPAL ====================
 function spawnParticlesFrom(worldPos, warm, isRightSide){
   const t = pickTarget(isRightSide);
 
@@ -718,27 +717,21 @@ function spawnLeftViewerParticles(){
   }
 }
 
-// ==================== COMETA: RECORRIDO ELEGANTE POR MARCO REDONDEADO REAL ====================
-// Recorre el perímetro de un rectángulo redondeado (outerW/outerH/radius) en coordenadas LOCALES de frameGroup,
-// luego lo convertimos a WORLD con frameGroup.localToWorld(). Esto hace que siga el marco redondeado "de verdad".
-
+// ==================== COMETA: PERÍMETRO REDONDEADO REAL (frameGroup local->world) ====================
 function roundedRectPerimeterPoint(u, outWorld){
-  // u: 0..1
   u = ((u % 1) + 1) % 1;
 
   const hw = outerW * 0.5;
   const hh = outerH * 0.5;
   const r  = Math.min(radius, hw - 0.001, hh - 0.001);
 
-  const topLen = (outerW - 2*r);
+  const topLen  = (outerW - 2*r);
   const sideLen = (outerH - 2*r);
-  const arcLen = (Math.PI * 0.5) * r;
+  const arcLen  = (Math.PI * 0.5) * r;
 
   const total = 2*topLen + 2*sideLen + 4*arcLen;
-
   let s = u * total;
 
-  // Helper: set local then to world
   const setLocalToWorld = (x,y)=>{
     tmpLocal.set(x, y, zFront);
     outWorld.copy(tmpLocal);
@@ -746,15 +739,14 @@ function roundedRectPerimeterPoint(u, outWorld){
     return outWorld;
   };
 
-  // Segment order (clockwise):
-  // 1) top edge (left->right) at y=+hh from x=-hw+r .. +hw-r
+  // 1) top edge (L->R)
   if (s <= topLen){
     const x = (-hw + r) + (s / topLen) * topLen;
     return setLocalToWorld(x, +hh);
   }
   s -= topLen;
 
-  // 2) top-right arc center (hw-r, hh-r) angle from +90° to 0°
+  // 2) top-right arc (+90 -> 0)
   if (s <= arcLen){
     const a = (Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
     const cx = (hw - r), cy = (hh - r);
@@ -762,14 +754,14 @@ function roundedRectPerimeterPoint(u, outWorld){
   }
   s -= arcLen;
 
-  // 3) right edge (top->bottom) at x=+hw from y=+hh-r .. -hh+r
+  // 3) right edge (T->B)
   if (s <= sideLen){
     const y = (+hh - r) - (s / sideLen) * sideLen;
     return setLocalToWorld(+hw, y);
   }
   s -= sideLen;
 
-  // 4) bottom-right arc center (hw-r, -hh+r) angle from 0° to -90°
+  // 4) bottom-right arc (0 -> -90)
   if (s <= arcLen){
     const a = 0 - (s / arcLen) * (Math.PI*0.5);
     const cx = (hw - r), cy = (-hh + r);
@@ -777,14 +769,14 @@ function roundedRectPerimeterPoint(u, outWorld){
   }
   s -= arcLen;
 
-  // 5) bottom edge (right->left) at y=-hh from x=+hw-r .. -hw+r
+  // 5) bottom edge (R->L)
   if (s <= topLen){
     const x = (+hw - r) - (s / topLen) * topLen;
     return setLocalToWorld(x, -hh);
   }
   s -= topLen;
 
-  // 6) bottom-left arc center (-hw+r, -hh+r) angle from -90° to -180°
+  // 6) bottom-left arc (-90 -> -180)
   if (s <= arcLen){
     const a = (-Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
     const cx = (-hw + r), cy = (-hh + r);
@@ -792,15 +784,14 @@ function roundedRectPerimeterPoint(u, outWorld){
   }
   s -= arcLen;
 
-  // 7) left edge (bottom->top) at x=-hw from y=-hh+r .. +hh-r
+  // 7) left edge (B->T)
   if (s <= sideLen){
     const y = (-hh + r) + (s / sideLen) * sideLen;
     return setLocalToWorld(-hw, y);
   }
   s -= sideLen;
 
-  // 8) top-left arc center (-hw+r, hh-r) angle from -180° to -270° (o +180° a +90°)
-  // Lo cierro hasta llegar al inicio.
+  // 8) top-left arc (-180 -> -270)
   {
     const a = (-Math.PI) - (s / arcLen) * (Math.PI*0.5);
     const cx = (-hw + r), cy = (hh - r);
@@ -818,17 +809,21 @@ function viewerEndWorldPos(out){
   return out;
 }
 
+// Rastro abundante que "tira" hacia el espectador (target = viewerEndWorldPos)
 function spawnCometTrail(worldPos, dt){
   cometTrailAcc += dt * COMET_TRAIL_RATE;
   const n = Math.floor(cometTrailAcc);
   if (n <= 0) return;
   cometTrailAcc -= n;
 
-  // Dirección
+  // dirección del cometa (para que el rastro vaya hacia atrás)
   cometDir.copy(worldPos).sub(cometPrev);
   const len = cometDir.length();
   if (len > 0.0001) cometDir.multiplyScalar(1 / len);
   else cometDir.set(0, 1, 0);
+
+  // target delante de cámara (rastro acercándose al espectador)
+  viewerEndWorldPos(tmpViewerEnd);
 
   for (let s=0; s<n; s++){
     const i = pCursor;
@@ -837,33 +832,43 @@ function spawnCometTrail(worldPos, dt){
     alive[i] = COMET_TRAIL_LIFE;
     maxLife[i] = COMET_TRAIL_LIFE;
 
-    const sx = worldPos.x + (Math.random()-0.5)*0.018;
-    const sy = worldPos.y + (Math.random()-0.5)*0.018;
-    const sz = worldPos.z + (Math.random()-0.5)*0.018;
+    const sx = worldPos.x + (Math.random()-0.5)*0.022;
+    const sy = worldPos.y + (Math.random()-0.5)*0.022;
+    const sz = worldPos.z + (Math.random()-0.5)*0.022;
 
     positions[i*3+0] = sx;
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // back drift + float
-    const back = 0.55 + Math.random()*0.40;
-    const vx = -cometDir.x * back + (Math.random()-0.5)*0.06;
-    const vy = -cometDir.y * back + (0.12 + Math.random()*0.18);
-    const vz = -cometDir.z * back + (Math.random()-0.5)*0.06;
+    // 1) impulso "hacia atrás" (cola)
+    const back = 0.55 + Math.random()*0.55;
+    let vx = -cometDir.x * back + (Math.random()-0.5)*0.06;
+    let vy = -cometDir.y * back + (0.10 + Math.random()*0.20);
+    let vz = -cometDir.z * back + (Math.random()-0.5)*0.06;
+
+    // 2) además, sesgo hacia el espectador para que el rastro se vaya "despegando" y viniendo
+    tmpDir.copy(tmpViewerEnd).sub(tmpSpawn.set(sx,sy,sz));
+    const d2 = tmpDir.length();
+    if (d2 > 0.0001){
+      tmpDir.multiplyScalar(1 / d2);
+      vx += tmpDir.x * COMET_TRAIL_TO_VIEWER_PULL * 0.12;
+      vy += tmpDir.y * COMET_TRAIL_TO_VIEWER_PULL * 0.12;
+      vz += tmpDir.z * COMET_TRAIL_TO_VIEWER_PULL * 0.12;
+    }
 
     velocity[i*3+0] = vx;
     velocity[i*3+1] = vy;
     velocity[i*3+2] = vz;
 
-    // Para que NO tire a esquina: target = propio punto
-    targetX[i] = sx;
-    targetY[i] = sy;
-    targetZ[i] = sz;
+    // Target = espectador (atracción suave ya existente en updateParticles)
+    targetX[i] = tmpViewerEnd.x;
+    targetY[i] = tmpViewerEnd.y;
+    targetZ[i] = tmpViewerEnd.z;
 
     const b = 0.75 + COMET_TRAIL_WARM*0.25;
     colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.65 + 0.25*Math.random()) * b;
-    colors[i*3+2] = (0.18 + 0.18*Math.random()) * b;
+    colors[i*3+1] = (0.68 + 0.22*Math.random()) * b;
+    colors[i*3+2] = (0.20 + 0.20*Math.random()) * b;
 
     alphas[i] = 1.0;
   }
@@ -873,8 +878,9 @@ function spawnCometTrail(worldPos, dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+// Cometa: 1 vuelta completa al marco (sin acercarse)
 function updateCometIntro(t, dt){
-  if (!COMET_ENABLED) { cometSprite.visible = false; cometMat.opacity = 0.0; return; }
+  if (!COMET_ENABLED) { cometSprite.visible = false; cometMat.opacity = 0.0; cometInited = false; return; }
   if (t >= INTRO_NO_MIDI_SECONDS){
     cometSprite.visible = false;
     cometMat.opacity = 0.0;
@@ -885,37 +891,19 @@ function updateCometIntro(t, dt){
   cometSprite.visible = true;
 
   const p = Math.max(0, Math.min(1, t / INTRO_NO_MIDI_SECONDS));
+
+  // entrada/salida suaves
   const fadeIn  = smoothstep01(p / 0.10);
-  const fadeOut = 1.0 - smoothstep01((p - 0.93) / 0.07);
+  const fadeOut = 1.0 - smoothstep01((p - 0.92) / 0.08);
   cometMat.opacity = 0.95 * fadeIn * fadeOut;
 
-  // Movimiento más impactante:
-  // - En marco: 1.35 vueltas, con easing y un pequeño "acelerón" al final
-  // - Luego se despega hacia el usuario con un smoothstep
-  if (p <= COMET_FRAME_PHASE){
-    const u = p / COMET_FRAME_PHASE;                 // 0..1
-    const ease = smoothstep01(u);
-    const turns = 1.35;
-    const loopU = (ease * turns) % 1.0;
-    roundedRectPerimeterPoint(loopU, cometPos);
+  // 1 vuelta "elegante": aceleración suave (no lineal) pero termina exacto en 1.0
+  const u = smoothstep01(p) * COMET_TURNS; // 0..1
+  roundedRectPerimeterPoint(u, cometPos);
 
-    // Guardamos el último punto de marco para que el despegue salga perfecto
-    cometPrev.copy(cometPos);
-  } else {
-    const u2 = (p - COMET_FRAME_PHASE) / (1.0 - COMET_FRAME_PHASE);
-    const s = smoothstep01(u2);
-
-    // Punto de salida del marco: justo donde estaba al acabar la fase marco
-    // Si por lo que sea no está init, lo recalculamos.
-    const start = cometInited ? cometPrev : roundedRectPerimeterPoint(0.0, tmpSpawn);
-
-    viewerEndWorldPos(tmpViewerEnd);
-    cometPos.copy(start).lerp(tmpViewerEnd, s);
-  }
-
-  // sprite
+  // sprite cometa (solo recorre, no se acerca)
   cometSprite.position.copy(cometPos);
-  const pulse = 0.82 + 0.18*Math.sin(t * 6.5);
+  const pulse = 0.80 + 0.20*Math.sin(t * 6.8);
   cometSprite.scale.setScalar(COMET_SPRITE_SCALE * pulse);
 
   // rastro
@@ -1075,7 +1063,7 @@ renderer.setAnimationLoop(()=>{
   // MIDI/haptics
   tickHaptics(t);
 
-  // COMETA INTRO (antes de que haya MIDI)
+  // COMETA INTRO (0–14s): 1 vuelta + rastro que se acerca al espectador
   updateCometIntro(t, dt);
 
   // marco gradiente
