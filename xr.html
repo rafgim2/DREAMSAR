@@ -382,6 +382,7 @@ function mapGrips(session){
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 3.5;
+const PARTICLE_SPEED = 0.55; // velocidad global (0.3–1.0)
 
 // “tendencia” hacia la pantalla:
 const TARGET_BIAS_PUSH = 0.045;   // empuje inicial (sutil)
@@ -569,9 +570,10 @@ function updateParticles(dt){
       velocity[i*3+2] += tmpDir.z * pull;
     }
 
-    positions[i*3+0] += velocity[i*3+0] * dt;
-    positions[i*3+1] += velocity[i*3+1] * dt;
-    positions[i*3+2] += velocity[i*3+2] * dt;
+positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
+positions[i*3+1] += velocity[i*3+1] * dt * PARTICLE_SPEED;
+positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
+
 
     velocity[i*3+0] *= (1 - dt*1.05);
     velocity[i*3+1] *= (1 - dt*0.55);
@@ -827,4 +829,5 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
+
 
