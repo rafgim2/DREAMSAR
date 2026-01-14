@@ -425,6 +425,24 @@ const PARTICLE_SPEED = 0.55;
 const TARGET_BIAS_PUSH = 0.045; // empuje inicial (muy suave)
 const TARGET_ATTRACT   = 0.20;  // atracción durante vida (suave)
 
+// ==================== EXTRA: PARTÍCULAS "EN EL AIRE" (disparadas por MIDI IZQUIERDO) ====================
+// Nacen delante de la cámara (zona visible) y van a la esquina superior izquierda igual que las del mando.
+
+const LEFT_VIEWER_PARTICLES = true;
+
+// cuántos "spawns" extra por nota izquierda (cada spawn llama a spawnParticlesFrom → crea P_SPAWN partículas)
+const LEFT_VIEWER_SPAWNS_PER_HIT = 1;   // 1 suele quedar muy bien (porque ya genera P_SPAWN partículas)
+const LEFT_VIEWER_SPAWN_PROB = 0.85;    // 0..1 (para no saturar)
+
+// Volumen delante de la cámara (metros)
+const VIEWER_Z_NEAR = 0.55;
+const VIEWER_Z_FAR  = 1.35;
+const VIEWER_X_MAX  = 0.75;
+const VIEWER_Y_MAX  = 0.45;
+
+// Evita que nazcan justo en el centro (queda más "atmósfera" y menos "moscas en la cara")
+const VIEWER_CENTER_HOLE = 0.18; // 0..1
+
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
@@ -615,6 +633,55 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+// --------- Helpers para spawn "en el aire" (delante de la cámara) ----------
+const tmpCamDir   = new THREE.Vector3();
+const tmpCamUp    = new THREE.Vector3();
+const tmpCamRight = new THREE.Vector3();
+const tmpViewerPos = new THREE.Vector3();
+
+function randomViewerWorldPos(out){
+  // Base de cámara en mundo (reutilizo tmpPos como "camPos" para no crear basura)
+  const camPos = camera.getWorldPosition(tmpPos);
+  camera.getWorldDirection(tmpCamDir).normalize();
+  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
+  tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
+
+  // Profundidad delante del usuario
+  const z = VIEWER_Z_NEAR + Math.random() * (VIEWER_Z_FAR - VIEWER_Z_NEAR);
+
+  // Spread (x/y) con agujero central
+  let nx = (Math.random()*2 - 1);
+  let ny = (Math.random()*2 - 1);
+
+  const r = Math.hypot(nx, ny);
+  if (r < VIEWER_CENTER_HOLE){
+    const ang = Math.atan2(ny, nx);
+    nx = Math.cos(ang) * VIEWER_CENTER_HOLE;
+    ny = Math.sin(ang) * VIEWER_CENTER_HOLE;
+  }
+
+  const x = nx * VIEWER_X_MAX;
+  const y = ny * VIEWER_Y_MAX;
+
+  out.copy(camPos)
+    .addScaledVector(tmpCamDir, z)
+    .addScaledVector(tmpCamRight, x)
+    .addScaledVector(tmpCamUp, y);
+
+  return out;
+}
+
+function spawnLeftViewerParticles(){
+  if (!LEFT_VIEWER_PARTICLES) return;
+  if (Math.random() > LEFT_VIEWER_SPAWN_PROB) return;
+
+  for (let s=0; s<LEFT_VIEWER_SPAWNS_PER_HIT; s++){
+    randomViewerWorldPos(tmpViewerPos);
+    // warm alto (como izquierda) y lado "false" => target cornerTL (tu pickTarget)
+    spawnParticlesFrom(tmpViewerPos, 0.90, false);
+  }
+}
+
 // ==================== VIBRACIÓN MÓVIL ====================
 let lastMobileVibeAt = -999;
 function mobileVibrate(){
@@ -712,6 +779,9 @@ function tickHand(times, which, videoTime, midiTime){
           } else {
             spawnParticlesFrom(pickMobileSpawn(false), 0.90, false); // móvil -> esquina inf izquierda (target sup izquierda)
           }
+
+          // ✅ NUEVO: partículas extra “en el aire” delante del espectador (mismo MIDI izquierdo)
+          spawnLeftViewerParticles();
         }
         leftIdx++;
         continue;
@@ -856,7 +926,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
-
-
-
