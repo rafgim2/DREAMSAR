@@ -52,21 +52,17 @@ const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; }
 const MIDI_RIGHT_URL = "./dream14.mid";
 const MIDI_LEFT_URL  = "./dream14iz.mid";
 
-// offsets (tuyos)
 const MIDI_OFFSET_RIGHT = 14.5;
 const MIDI_OFFSET_LEFT  = 8.5;
 
-// háptica mandos
 const HAPTIC_INTENSITY = 0.35;
 const HAPTIC_DURATION_MS = 18;
 
-// sincronía MIDI
 const HAPTIC_WINDOW = 0.020;
 const MIN_PULSE_GAP = 0.010;
 
-// vibración móvil (Web Vibration API)
-const MOBILE_VIBRATION_MS = 22;   // sutil
-const MOBILE_MIN_GAP = 0.055;     // evita vibrar demasiado seguido
+const MOBILE_VIBRATION_MS = 22;
+const MOBILE_MIN_GAP = 0.055;
 
 // ==================== FUENTE PRISTINA (no bloqueante) ====================
 let FONT_READY = false;
@@ -85,7 +81,7 @@ function loadPristinaFontNonBlocking(){
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
 // ==================== THREE / XR ====================
-const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, premultipliedAlpha:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
@@ -97,7 +93,6 @@ scene.background = null;
 const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 50);
 camera.position.set(0, 1.6, 2);
 
-// luz suave
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 
 // ==================== VIDEO + AUDIO ====================
@@ -136,7 +131,7 @@ const screen = new THREE.Mesh(
 screen.position.set(0, 1.55, -1.35);
 scene.add(screen);
 
-// ==================== MARCO REDONDEADO GRADIENTE (sutil) ====================
+// ==================== MARCO REDONDEADO GRADIENTE ====================
 const frameGroup = new THREE.Group();
 frameGroup.position.copy(screen.position);
 frameGroup.rotation.copy(screen.rotation);
@@ -333,7 +328,6 @@ async function loadMidiTimes(url){
 // ==================== CONTROLLERS (Quest) ====================
 let xrSession = null;
 
-// grip 0 y 1
 const grip0 = renderer.xr.getControllerGrip(0);
 const grip1 = renderer.xr.getControllerGrip(1);
 scene.add(grip0);
@@ -362,62 +356,101 @@ function mapGrips(session){
   log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
-// ==================== PARTÍCULAS (con FADE OUT) ====================
+// ==================== PARTÍCULAS (FADE PERFECTO EN PASSTHROUGH) ====================
+// Clave: fade por ALPHA (atributo), y discard en alpha bajo (sin halo negro).
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
-const P_LIFE = 3.5; // ✅ tu ajuste (doble duración)
+const P_LIFE = 3.5;
 
-// Sprite
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
   c.width = 64; c.height = 64;
   const cx = c.getContext("2d");
+
+  // Fondo totalmente transparente
+  cx.clearRect(0,0,64,64);
+
+  // Alpha radial (RGB blanco), sin negro
   const g = cx.createRadialGradient(32,32,0,32,32,30);
   g.addColorStop(0.0,"rgba(255,255,255,1)");
-  g.addColorStop(0.5,"rgba(255,255,255,0.35)");
+  g.addColorStop(0.6,"rgba(255,255,255,0.35)");
   g.addColorStop(1.0,"rgba(255,255,255,0)");
   cx.fillStyle = g;
   cx.fillRect(0,0,64,64);
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 const spriteTex = makeSpriteTexture();
 
-const positions  = new Float32Array(MAX_PARTICLES * 3);
-const colors     = new Float32Array(MAX_PARTICLES * 3);
-const baseColors = new Float32Array(MAX_PARTICLES * 3); // ✅ base para fade limpio
-const alive      = new Float32Array(MAX_PARTICLES);
-const velocity   = new Float32Array(MAX_PARTICLES * 3);
+const positions = new Float32Array(MAX_PARTICLES * 3);
+const colors    = new Float32Array(MAX_PARTICLES * 3);
+const alphas    = new Float32Array(MAX_PARTICLES);      // ✅ alpha por partícula
+const alive     = new Float32Array(MAX_PARTICLES);
+const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
-
-const pMat = new THREE.PointsMaterial({
-  map: spriteTex,
-  transparent: true,
-  depthWrite: false,
-  depthTest: false,
-  blending: THREE.AdditiveBlending,
-  vertexColors: true,
-  opacity: 0.95,
-  size: 0.055,
-  sizeAttenuation: true
-});
+pGeom.setAttribute("aAlpha",   new THREE.BufferAttribute(alphas, 1));
 
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
   positions[i*3+0] = 0;
   positions[i*3+1] = -999;
   positions[i*3+2] = 0;
-
-  // inicial
-  baseColors[i*3+0] = 1; baseColors[i*3+1] = 1; baseColors[i*3+2] = 1;
-  colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
+  colors[i*3+0]=1; colors[i*3+1]=1; colors[i*3+2]=1;
+  alphas[i]=0;
 }
-pGeom.attributes.position.needsUpdate = true;
-pGeom.attributes.color.needsUpdate = true;
+
+const pMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: THREE.AdditiveBlending,
+  uniforms: {
+    uMap: { value: spriteTex },
+    uSize: { value: 22.0 } // tamaño en píxeles aprox (Quest)
+  },
+  vertexShader: `
+    attribute vec3 color;
+    attribute float aAlpha;
+    varying vec3 vColor;
+    varying float vAlpha;
+    uniform float uSize;
+
+    void main(){
+      vColor = color;
+      vAlpha = aAlpha;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mvPosition;
+
+      // tamaño atenuado por distancia
+      float dist = -mvPosition.z;
+      gl_PointSize = uSize * (1.0 / max(0.2, dist));
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D uMap;
+    varying vec3 vColor;
+    varying float vAlpha;
+
+    void main(){
+      vec4 tex = texture2D(uMap, gl_PointCoord);
+      float a = tex.a * vAlpha;
+
+      // ✅ evita “restos” (halo) cuando casi desaparece
+      if (a < 0.02) discard;
+
+      // En aditivo, el negro no “ensucia”: sumamos luz
+      vec3 col = vColor * tex.a;
+      gl_FragColor = vec4(col, a);
+    }
+  `
+});
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -428,7 +461,6 @@ let pCursor = 0;
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 
-// Esquinas inferiores del vídeo en WORLD (para modo móvil)
 function getVideoCornerWorld(isLeft){
   const x = (isLeft ? -screenW/2 : screenW/2);
   const y = (-screenH/2);
@@ -449,30 +481,20 @@ function spawnParticlesFrom(worldPos, warm){
     positions[i*3+2] = worldPos.z + (Math.random()-0.5)*0.04;
 
     velocity[i*3+0] = (Math.random()-0.5)*0.07;
-
-    // velocidad vertical (se mantiene igual: suben igual de lentas)
-    velocity[i*3+1] = 0.34 + Math.random()*0.18;
-
+    velocity[i*3+1] = 0.34 + Math.random()*0.18; // tu velocidad “lenta”
     velocity[i*3+2] = (Math.random()-0.5)*0.07;
 
-    // color base cálido
     const b = 0.75 + warm*0.25;
-    const r = 1.0 * b;
-    const g = (0.55 + 0.35*Math.random()) * b;
-    const bl = (0.12 + 0.14*Math.random()) * b;
+    colors[i*3+0] = 1.0 * b;
+    colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
+    colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
 
-    baseColors[i*3+0] = r;
-    baseColors[i*3+1] = g;
-    baseColors[i*3+2] = bl;
-
-    // color visible arranca a tope
-    colors[i*3+0] = r;
-    colors[i*3+1] = g;
-    colors[i*3+2] = bl;
+    alphas[i] = 1.0; // arranca al 100%
   }
 
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.color.needsUpdate = true;
+  pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
 function updateParticles(dt){
@@ -481,30 +503,27 @@ function updateParticles(dt){
 
     alive[i] -= dt;
 
-    // ✅ fade out por brillo (ideal en passthrough)
+    // ✅ fade por alpha (no por negro). Curva suave.
     const a = Math.max(0, alive[i] / P_LIFE);
-    const fade = a * a; // suave
-
-    colors[i*3+0] = baseColors[i*3+0] * fade;
-    colors[i*3+1] = baseColors[i*3+1] * fade;
-    colors[i*3+2] = baseColors[i*3+2] * fade;
+    const fade = a * a;       // suave
+    alphas[i] = fade;
 
     positions[i*3+0] += velocity[i*3+0] * dt;
     positions[i*3+1] += velocity[i*3+1] * dt;
     positions[i*3+2] += velocity[i*3+2] * dt;
 
-    // fricción suave
     velocity[i*3+0] *= (1 - dt*1.05);
     velocity[i*3+1] *= (1 - dt*0.55);
     velocity[i*3+2] *= (1 - dt*1.05);
 
     if (alive[i] <= 0){
       positions[i*3+1] = -999;
-      colors[i*3+0] = 0; colors[i*3+1] = 0; colors[i*3+2] = 0;
+      alphas[i] = 0;
     }
   }
+
   pGeom.attributes.position.needsUpdate = true;
-  pGeom.attributes.color.needsUpdate = true; // ✅ importante (fade cada frame)
+  pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
 // ==================== VIBRACIÓN MÓVIL ====================
@@ -649,13 +668,11 @@ renderer.setAnimationLoop(()=>{
 
   tickHaptics(t);
 
-  // marco gradiente sutil
   frameEnergy *= Math.exp(-dt * 3.2);
   framePhase += dt * (0.18 + frameEnergy * 0.25);
   drawGradient(framePhase, frameEnergy);
   frameMat.opacity = 0.78 + frameEnergy * 0.14;
 
-  // partículas
   updateParticles(dt);
 
   renderer.render(scene, camera);
