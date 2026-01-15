@@ -271,7 +271,8 @@ let prevVideoT = 0;
 
 const TEXT_Z = -1.05;
 const TEXT_Y_TEXT  = 1.65;
-const TEXT_Y_TITLE = 1.82;
+// ✅ MÁS BAJO QUE ANTES (antes 1.82)
+const TEXT_Y_TITLE = 1.74;
 
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
@@ -452,16 +453,15 @@ const VIEWER_CENTER_HOLE = 0.18;
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
 
-// densidad (suave y bonita)
-const TITLE_PARTICLE_RATE = 18;  // partículas/seg (aprox)
-const TITLE_PARTICLE_LIFE = 3.6; // vida propia (independiente)
+const TITLE_PARTICLE_RATE = 18;
+const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
 
-// campo alrededor del título (en espacio cámara)
+// ✅ MÁS CONCENTRADAS QUE ANTES (antes 0.70 / 0.40)
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.35;
-const TITLE_X_MAX  = 0.70;
-const TITLE_Y_MAX  = 0.40;
+const TITLE_X_MAX  = 0.42;
+const TITLE_Y_MAX  = 0.22;
 
 let titleAcc = 0;
 
@@ -669,9 +669,8 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== SPAWN “LIBRE” PARA TÍTULO (sin target, solo subida suave) ====================
+// ==================== SPAWN “LIBRE” PARA TÍTULO ====================
 function spawnTitleParticlesAt(worldPos, warm){
-  // 2 por “hit” para que se note pero sin ruido
   const COUNT = 2;
 
   for (let k=0;k<COUNT;k++){
@@ -681,8 +680,7 @@ function spawnTitleParticlesAt(worldPos, warm){
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
 
-    // 0 = sin atracción (quedan libres)
-    attractMul[i] = 0.0;
+    attractMul[i] = 0.0; // libre
 
     const sx = worldPos.x + (Math.random()-0.5)*0.06;
     const sy = worldPos.y + (Math.random()-0.5)*0.06;
@@ -692,7 +690,6 @@ function spawnTitleParticlesAt(worldPos, warm){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // movimiento suave: algo de deriva y subida
     let vx = (Math.random()-0.5)*0.05;
     let vy = 0.22 + Math.random()*0.12;
     let vz = (Math.random()-0.5)*0.05;
@@ -701,15 +698,15 @@ function spawnTitleParticlesAt(worldPos, warm){
     velocity[i*3+1] = vy;
     velocity[i*3+2] = vz;
 
-    // target = mismo punto (no importa, no se usa con attractMul=0)
     targetX[i] = sx;
     targetY[i] = sy + 0.8;
     targetZ[i] = sz;
 
+    // ✅ COLOR MÁS DORADO (menos azul, un poco menos verde)
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.68 + 0.22*Math.random()) * b;
-    colors[i*3+2] = (0.20 + 0.20*Math.random()) * b;
+    colors[i*3+1] = (0.55 + 0.20*Math.random()) * b;
+    colors[i*3+2] = (0.08 + 0.10*Math.random()) * b;
 
     alphas[i] = 1.0;
   }
@@ -731,7 +728,6 @@ function updateParticles(dt){
     const fade = a * a;
     alphas[i] = fade;
 
-    // atracción solo si attractMul > 0
     if (attractMul[i] > 0.0001){
       tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
       tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
@@ -764,7 +760,7 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== VIEWER POS (para título y viewer particles) ====================
+// ==================== VIEWER POS ====================
 function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
   const camPos = camera.getWorldPosition(tmpPos);
   camera.getWorldDirection(tmpCamDir).normalize();
@@ -794,16 +790,18 @@ function spawnLeftViewerParticles(){
 }
 
 // ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
+let titleAcc = 0;
 function updateTitleParticles(t, dt){
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
 
-  // si el cue actual es título, concentramos más cerca del centro
   const isTitleActive = (activeType === "title");
 
   const zNear = isTitleActive ? 0.75 : TITLE_Z_NEAR;
-  const zFar  = isTitleActive ? 1.25 : TITLE_Z_FAR;
-  const xMax  = isTitleActive ? 0.55 : TITLE_X_MAX;
-  const yMax  = isTitleActive ? 0.32 : TITLE_Y_MAX;
+  const zFar  = isTitleActive ? 1.20 : TITLE_Z_FAR;
+
+  // ✅ AÚN MÁS CONCENTRADAS CUANDO HAY TÍTULO ACTIVO
+  const xMax  = isTitleActive ? 0.38 : TITLE_X_MAX;
+  const yMax  = isTitleActive ? 0.18 : TITLE_Y_MAX;
 
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
@@ -899,6 +897,13 @@ function viewerEndWorldPos(out){
     .addScaledVector(tmpCamUp, COMET_END_Y);
   return out;
 }
+
+let cometTrailAcc = 0;
+let cometInited = false;
+const cometPos = new THREE.Vector3();
+const cometPrev = new THREE.Vector3();
+const cometDir  = new THREE.Vector3();
+const tmpViewerEnd = new THREE.Vector3();
 
 function spawnCometTrail(worldPos, dt){
   cometTrailAcc += dt * COMET_TRAIL_RATE;
