@@ -271,8 +271,7 @@ let prevVideoT = 0;
 
 const TEXT_Z = -1.05;
 const TEXT_Y_TEXT  = 1.65;
-// ✅ MÁS BAJO QUE ANTES (antes 1.82)
-const TEXT_Y_TITLE = 1.74;
+const TEXT_Y_TITLE = 1.74;   // ✅ título más bajo (antes 1.82)
 
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
@@ -457,11 +456,11 @@ const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
 
-// ✅ MÁS CONCENTRADAS QUE ANTES (antes 0.70 / 0.40)
+// ✅ más concentradas en zona título
 const TITLE_Z_NEAR = 0.75;
-const TITLE_Z_FAR  = 1.35;
-const TITLE_X_MAX  = 0.42;
-const TITLE_Y_MAX  = 0.22;
+const TITLE_Z_FAR  = 1.25;
+const TITLE_X_MAX  = 0.42;  // antes 0.70
+const TITLE_Y_MAX  = 0.22;  // antes 0.40
 
 let titleAcc = 0;
 
@@ -669,7 +668,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== SPAWN “LIBRE” PARA TÍTULO ====================
+// ==================== SPAWN “LIBRE” PARA TÍTULO (más dorado + concentrado) ====================
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
@@ -682,17 +681,17 @@ function spawnTitleParticlesAt(worldPos, warm){
 
     attractMul[i] = 0.0; // libre
 
-    const sx = worldPos.x + (Math.random()-0.5)*0.06;
-    const sy = worldPos.y + (Math.random()-0.5)*0.06;
-    const sz = worldPos.z + (Math.random()-0.5)*0.06;
+    const sx = worldPos.x + (Math.random()-0.5)*0.05;
+    const sy = worldPos.y + (Math.random()-0.5)*0.05;
+    const sz = worldPos.z + (Math.random()-0.5)*0.05;
 
     positions[i*3+0] = sx;
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    let vx = (Math.random()-0.5)*0.05;
-    let vy = 0.22 + Math.random()*0.12;
-    let vz = (Math.random()-0.5)*0.05;
+    let vx = (Math.random()-0.5)*0.045;
+    let vy = 0.20 + Math.random()*0.10;
+    let vz = (Math.random()-0.5)*0.045;
 
     velocity[i*3+0] = vx;
     velocity[i*3+1] = vy;
@@ -702,7 +701,7 @@ function spawnTitleParticlesAt(worldPos, warm){
     targetY[i] = sy + 0.8;
     targetZ[i] = sz;
 
-    // ✅ COLOR MÁS DORADO (menos azul, un poco menos verde)
+    // ✅ más dorado: menos azul, verde algo más bajo
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.55 + 0.20*Math.random()) * b;
@@ -790,18 +789,16 @@ function spawnLeftViewerParticles(){
 }
 
 // ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
-let titleAcc = 0;
 function updateTitleParticles(t, dt){
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
 
   const isTitleActive = (activeType === "title");
 
+  // ✅ aún más concentradas cuando está activo el título
   const zNear = isTitleActive ? 0.75 : TITLE_Z_NEAR;
   const zFar  = isTitleActive ? 1.20 : TITLE_Z_FAR;
-
-  // ✅ AÚN MÁS CONCENTRADAS CUANDO HAY TÍTULO ACTIVO
-  const xMax  = isTitleActive ? 0.38 : TITLE_X_MAX;
-  const yMax  = isTitleActive ? 0.18 : TITLE_Y_MAX;
+  const xMax  = isTitleActive ? 0.34 : TITLE_X_MAX; // antes 0.38/0.55
+  const yMax  = isTitleActive ? 0.16 : TITLE_Y_MAX; // antes 0.18/0.32
 
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
@@ -898,13 +895,6 @@ function viewerEndWorldPos(out){
   return out;
 }
 
-let cometTrailAcc = 0;
-let cometInited = false;
-const cometPos = new THREE.Vector3();
-const cometPrev = new THREE.Vector3();
-const cometDir  = new THREE.Vector3();
-const tmpViewerEnd = new THREE.Vector3();
-
 function spawnCometTrail(worldPos, dt){
   cometTrailAcc += dt * COMET_TRAIL_RATE;
   const n = Math.floor(cometTrailAcc);
@@ -970,7 +960,6 @@ function spawnCometTrail(worldPos, dt){
 }
 
 function updateCometIntro(t, dt){
-  if (!COMET_ENABLED) { cometSprite.visible = false; cometMat.opacity = 0.0; cometInited = false; return; }
   if (t >= INTRO_NO_MIDI_SECONDS){
     cometSprite.visible = false;
     cometMat.opacity = 0.0;
@@ -1144,13 +1133,11 @@ renderer.setAnimationLoop(()=>{
 
   stepType(dt);
 
-  // ✅ partículas aleatorias bonitas durante el título (2–14s)
+  // ✅ partículas aleatorias durante el título
   updateTitleParticles(t, dt);
 
-  // MIDI/háptica
   tickHaptics(t);
 
-  // Intro cometa + cola aspirada al espectador (0–14s)
   updateCometIntro(t, dt);
 
   frameEnergy *= Math.exp(-dt * 3.2);
