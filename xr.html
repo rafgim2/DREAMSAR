@@ -33,7 +33,7 @@
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
-      ✅ Título: ahora tiene brillo/halo (sin partículas naciendo del texto).
+      ✅ Título: brillo/halo con “vida” (pulso y cambio de tono suave).
       ✅ Fin: el vídeo NO hace loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
@@ -299,6 +299,11 @@ let activeLineH = 78;
 let titleGlowMesh = null;
 let titleGlowTex = null;
 
+// “vida” del título (animación)
+let titleLifePhase = 0;          // avanza con dt
+let titleNeedRedraw = false;     // fuerza redraw aunque no avance el cursor
+let titleLastDrawChars = 0;      // recuerda último chars dibujado
+
 function makeGlowTexture(){
   const c = document.createElement("canvas");
   c.width = 256; c.height = 256;
@@ -319,6 +324,17 @@ function makeGlowTexture(){
   tex.magFilter = THREE.LinearFilter;
   tex.generateMipmaps = false;
   return tex;
+}
+
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+// Interpola entre dos colores RGB y devuelve "rgba(r,g,b,a)"
+function mixRGBA(c1, c2, t, a){
+  const r = Math.round(lerp(c1[0], c2[0], t));
+  const g = Math.round(lerp(c1[1], c2[1], t));
+  const b = Math.round(lerp(c1[2], c2[2], t));
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 function setupText(lines, type = "text"){
@@ -395,6 +411,10 @@ function setupText(lines, type = "text"){
 
     titleGlowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
     titleGlowMesh.quaternion.copy(plane.quaternion);
+
+    // reinicia “vida” para el nuevo título
+    titleLifePhase = 0;
+    titleNeedRedraw = true;
   } else {
     if (titleGlowMesh) titleGlowMesh.visible = false;
   }
@@ -402,11 +422,16 @@ function setupText(lines, type = "text"){
   fullText = fullLines.join("\n");
   cursor = 0;
   nextT = 0;
+
+  titleLastDrawChars = 0;
   draw(0);
 }
 
 function draw(chars){
   if (!ctx) return;
+
+  titleLastDrawChars = chars; // recordamos
+  titleNeedRedraw = false;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${activeFontPx}px ${fontName()}`;
@@ -415,10 +440,27 @@ function draw(chars){
 
   const isTitle = (activeType === "title");
 
-  const titleFill = "rgba(255, 210, 140, 0.98)";
-  const titleCore = "rgba(255, 235, 210, 0.95)";
-  const titleGlow1 = "rgba(255, 165,  80, 0.55)";
-  const titleGlow2 = "rgba(255, 120,  40, 0.30)";
+  // --- "vida": pulso + cambio de tono suave ---
+  // tHue oscila entre 0..1 lentamente
+  const tHue = isTitle ? (0.5 + 0.5*Math.sin(titleLifePhase * 0.55)) : 0;
+  // pulse oscila 0..1 un poco más rápido
+  const pulse = isTitle ? (0.5 + 0.5*Math.sin(titleLifePhase * 2.2)) : 0;
+
+  // dos paletas (dorado <-> ámbar más rojizo)
+  const warmA = [255, 210, 140];
+  const warmB = [255, 165,  90];
+
+  const coreA = [255, 240, 220];
+  const coreB = [255, 230, 200];
+
+  // alpha dinámico (muy suave)
+  const glowBoost = isTitle ? lerp(0.90, 1.20, pulse) : 1.0;
+
+  const titleFill = mixRGBA(warmA, warmB, tHue, 0.98);
+  const titleCore = mixRGBA(coreA, coreB, tHue, 0.95);
+
+  const glow1 = mixRGBA([255,165,80],[255,135,55], tHue, 0.55);
+  const glow2 = mixRGBA([255,120,40],[255, 95,25], tHue, 0.30);
 
   const textFill  = "rgba(255,255,255,0.96)";
 
@@ -431,19 +473,19 @@ function draw(chars){
       return;
     }
 
-    // halo grande
+    // halo grande (pulse)
     ctx.save();
-    ctx.fillStyle = titleGlow2;
-    ctx.shadowColor = titleGlow2;
-    ctx.shadowBlur = 55;
+    ctx.fillStyle = glow2;
+    ctx.shadowColor = glow2;
+    ctx.shadowBlur = 55 * glowBoost;
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // halo medio
+    // halo medio (pulse)
     ctx.save();
-    ctx.fillStyle = titleGlow1;
-    ctx.shadowColor = titleGlow1;
-    ctx.shadowBlur = 28;
+    ctx.fillStyle = glow1;
+    ctx.shadowColor = glow1;
+    ctx.shadowBlur = 28 * glowBoost;
     ctx.fillText(str, x, y);
     ctx.restore();
 
@@ -455,7 +497,7 @@ function draw(chars){
     ctx.strokeText(str, x, y);
     ctx.restore();
 
-    // relleno cálido brillante
+    // relleno
     ctx.save();
     ctx.fillStyle = titleFill;
     ctx.shadowColor = "rgba(0,0,0,0.35)";
@@ -463,12 +505,12 @@ function draw(chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // núcleo luminoso
+    // núcleo luminoso (pulse)
     ctx.save();
     ctx.fillStyle = titleCore;
     ctx.shadowColor = titleCore;
-    ctx.shadowBlur = 10;
-    ctx.globalAlpha = 0.55;
+    ctx.shadowBlur = 10 * glowBoost;
+    ctx.globalAlpha = 0.45 + 0.20*pulse;
     ctx.fillText(str, x, y);
     ctx.restore();
   }
@@ -491,7 +533,6 @@ function draw(chars){
     drawLineWithGlow(full, cx, y);
 
     ctx.restore();
-
     y += activeLineH;
   }
 
@@ -506,6 +547,34 @@ function stepType(dt){
     cursor++;
     draw(cursor);
     nextT += 1 / randomCps();
+  }
+}
+
+// actualiza la “vida” del título aunque el typing ya haya terminado
+function updateTitleLife(dt){
+  if (activeType !== "title") return;
+
+  // avanza fase
+  titleLifePhase += dt;
+
+  // fuerza redraw a ~20 fps para que el glow cambie suave sin gastar demasiado
+  // (si quieres aún más suave, sube 20->30)
+  const FPS = 20;
+  if (Math.floor(titleLifePhase * FPS) !== Math.floor((titleLifePhase - dt) * FPS)){
+    titleNeedRedraw = true;
+  }
+
+  // anima el panel 3D (opacidad + leve “respirar” de escala)
+  if (titleGlowMesh){
+    const pulse = 0.5 + 0.5*Math.sin(titleLifePhase * 2.0);
+    titleGlowMesh.material.opacity = 0.85 + 0.25*pulse;
+
+    const s = 1.0 + 0.02*pulse;
+    titleGlowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
+  }
+
+  if (titleNeedRedraw){
+    draw(titleLastDrawChars);
   }
 }
 
@@ -582,9 +651,9 @@ const VIEWER_Z_NEAR = 0.55;
 const VIEWER_Z_FAR  = 1.35;
 const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
-const VIEWER_CENTER_HOLE = 0.18;
 
-// ==================== (se mantiene) PARTÍCULAS ALEATORIAS 2–14s (zona título), PERO NO DESDE EL TEXTO ====================
+// ==================== (opcional) PARTÍCULAS SUAVES ZONA TÍTULO 2–14s ====================
+// Si no quieres nada alrededor del título, pon TITLE_PARTICLE_RATE = 0.
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
 
@@ -641,7 +710,6 @@ const alive     = new Float32Array(MAX_PARTICLES);
 const maxLife   = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-// multiplicador de atracción por partícula (1 normal, cometa más fuerte, 0 = libre)
 const attractMul = new Float32Array(MAX_PARTICLES);
 
 const targetX = new Float32Array(MAX_PARTICLES);
@@ -923,7 +991,6 @@ function spawnLeftViewerParticles(){
 }
 
 // ==================== PARTÍCULAS ALEATORIAS (2–14s) ZONA TÍTULO (opcional) ====================
-// Si NO quieres ninguna partícula alrededor del título, pon TITLE_PARTICLE_RATE = 0.
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
@@ -1269,6 +1336,9 @@ renderer.setAnimationLoop(()=>{
   prevVideoT = t;
 
   stepType(dt);
+
+  // ✅ “vida” del título (pulso + cambio tono + panel glow respirando)
+  updateTitleLife(dt);
 
   // (opcional) partículas suaves alrededor del título en 2–14s
   updateTitleParticles(t, dt);
