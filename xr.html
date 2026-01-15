@@ -33,6 +33,7 @@
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
+      Título (2–14s): partículas aleatorias suaves alrededor del título.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -261,26 +262,39 @@ frameGroup.add(frameMesh);
 let frameEnergy = 0;
 let framePhase = 0;
 
-// ==================== TEXTO “ESCRITURA” ====================
-const pad = 36, fontPx = 56, lineH = 78;
+// ==================== TEXTO “ESCRITURA” (con TITLE) ====================
+const pad = 36;
 let canvas, ctx, texture, plane;
 let fullLines = [], fullWidths = [], fullText = "";
 let cursor = 0, nextT = 0;
 let prevVideoT = 0;
 
-const TEXT_Y = 1.65;
+const TEXT_Z = -1.05;
+const TEXT_Y_TEXT  = 1.65;
+const TEXT_Y_TITLE = 1.82;
+
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
 
-function setupText(lines){
+let activeType = "text";
+let activeFontPx = 56;
+let activeLineH = 78;
+
+function setupText(lines, type = "text"){
+  activeType = type || "text";
+  const isTitle = activeType === "title";
+
+  activeFontPx = isTitle ? 96 : 56;
+  activeLineH  = isTitle ? 112 : 78;
+
   fullLines = Array.isArray(lines) ? lines : [String(lines)];
 
   const mctx = document.createElement("canvas").getContext("2d");
-  mctx.font = `${fontPx}px ${fontName()}`;
+  mctx.font = `${activeFontPx}px ${fontName()}`;
   fullWidths = fullLines.map(l => mctx.measureText(l).width);
 
   const w = Math.ceil(Math.max(...fullWidths) + pad*2);
-  const h = Math.ceil(fullLines.length * lineH + pad*2);
+  const h = Math.ceil(fullLines.length * activeLineH + pad*2);
 
   canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
@@ -298,14 +312,15 @@ function setupText(lines){
   }
 
   const aspect = w / h;
-  const physicalH = 0.30;
+  const physicalH = isTitle ? 0.36 : 0.30;
   const physicalW = physicalH * aspect;
 
   plane = new THREE.Mesh(
     new THREE.PlaneGeometry(physicalW, physicalH),
     new THREE.MeshBasicMaterial({ map: texture, transparent:true, depthWrite:false })
   );
-  plane.position.set(0, TEXT_Y, -1.05);
+
+  plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
   scene.add(plane);
 
   fullText = fullLines.join("\n");
@@ -318,7 +333,7 @@ function draw(chars){
   if (!ctx) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = `${fontPx}px ${fontName()}`;
+  ctx.font = `${activeFontPx}px ${fontName()}`;
   ctx.fillStyle = "rgba(255,255,255,0.96)";
   ctx.shadowColor = "rgba(0,0,0,0.85)";
   ctx.shadowBlur = 20;
@@ -327,7 +342,7 @@ function draw(chars){
 
   const visible = fullText.slice(0, chars).split("\n");
   const cx = canvas.width / 2;
-  let y = pad + lineH/2;
+  let y = pad + activeLineH/2;
 
   for (let i=0;i<fullLines.length;i++){
     const full = fullLines[i];
@@ -337,12 +352,12 @@ function draw(chars){
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(left, y - lineH/2, vw, lineH);
+    ctx.rect(left, y - activeLineH/2, vw, activeLineH);
     ctx.clip();
     ctx.fillText(full, cx, y);
     ctx.restore();
 
-    y += lineH;
+    y += activeLineH;
   }
   texture.needsUpdate = true;
 }
@@ -433,22 +448,36 @@ const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
 const VIEWER_CENTER_HOLE = 0.18;
 
+// ==================== TÍTULO: PARTÍCULAS ALEATORIAS (2–14s) ====================
+const TITLE_PARTICLES_START = 2.0;
+const TITLE_PARTICLES_END   = 14.0;
+
+// densidad (suave y bonita)
+const TITLE_PARTICLE_RATE = 18;  // partículas/seg (aprox)
+const TITLE_PARTICLE_LIFE = 3.6; // vida propia (independiente)
+const TITLE_PARTICLE_WARM = 0.95;
+
+// campo alrededor del título (en espacio cámara)
+const TITLE_Z_NEAR = 0.75;
+const TITLE_Z_FAR  = 1.35;
+const TITLE_X_MAX  = 0.70;
+const TITLE_Y_MAX  = 0.40;
+
+let titleAcc = 0;
+
 // ==================== COMETA INTRO (0–14s) ====================
 const INTRO_NO_MIDI_SECONDS = 14.0;
 const COMET_ENABLED = true;
 const COMET_TURNS = 1.0;
 const COMET_SPRITE_SCALE = 0.14;
 
-// Rastro MUY denso y con vida suficiente para "llegar"
-const COMET_TRAIL_RATE = 220;     // densidad (150..260)
-const COMET_TRAIL_LIFE = 3.4;     // vida (2.6..4.2) -> llega de sobra
+const COMET_TRAIL_RATE = 220;
+const COMET_TRAIL_LIFE = 3.4;
 const COMET_TRAIL_WARM = 0.95;
 
-// Atracción hacia espectador para el rastro del cometa (SIN afectar al resto)
-const COMET_ATTRACT_MUL = 4.0;    // 3..6 (más = más "aspiración")
-const COMET_TO_VIEWER_PUSH = 0.28; // empujón inicial (0.18..0.35)
+const COMET_ATTRACT_MUL = 4.0;
+const COMET_TO_VIEWER_PUSH = 0.28;
 
-// Punto destino delante del usuario
 const COMET_END_Z = 0.55;
 const COMET_END_Y = 0.06;
 
@@ -478,7 +507,7 @@ const alive     = new Float32Array(MAX_PARTICLES);
 const maxLife   = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-// ✅ multiplicador de atracción por partícula (1 normal, cometa más fuerte)
+// multiplicador de atracción por partícula (1 normal, cometa más fuerte, 0 = libre)
 const attractMul = new Float32Array(MAX_PARTICLES);
 
 const targetX = new Float32Array(MAX_PARTICLES);
@@ -589,7 +618,7 @@ function smoothstep01(x){
   return x*x*(3 - 2*x);
 }
 
-// ==================== SPAWN PRINCIPAL ====================
+// ==================== SPAWN PRINCIPAL (MIDI) ====================
 function spawnParticlesFrom(worldPos, warm, isRightSide){
   const t = pickTarget(isRightSide);
 
@@ -599,7 +628,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
 
     alive[i] = P_LIFE;
     maxLife[i] = P_LIFE;
-    attractMul[i] = 1.0; // normal
+    attractMul[i] = 1.0;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.04;
     const sy = worldPos.y + (Math.random()-0.5)*0.04;
@@ -640,6 +669,57 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+// ==================== SPAWN “LIBRE” PARA TÍTULO (sin target, solo subida suave) ====================
+function spawnTitleParticlesAt(worldPos, warm){
+  // 2 por “hit” para que se note pero sin ruido
+  const COUNT = 2;
+
+  for (let k=0;k<COUNT;k++){
+    const i = pCursor;
+    pCursor = (pCursor + 1) % MAX_PARTICLES;
+
+    alive[i] = TITLE_PARTICLE_LIFE;
+    maxLife[i] = TITLE_PARTICLE_LIFE;
+
+    // 0 = sin atracción (quedan libres)
+    attractMul[i] = 0.0;
+
+    const sx = worldPos.x + (Math.random()-0.5)*0.06;
+    const sy = worldPos.y + (Math.random()-0.5)*0.06;
+    const sz = worldPos.z + (Math.random()-0.5)*0.06;
+
+    positions[i*3+0] = sx;
+    positions[i*3+1] = sy;
+    positions[i*3+2] = sz;
+
+    // movimiento suave: algo de deriva y subida
+    let vx = (Math.random()-0.5)*0.05;
+    let vy = 0.22 + Math.random()*0.12;
+    let vz = (Math.random()-0.5)*0.05;
+
+    velocity[i*3+0] = vx;
+    velocity[i*3+1] = vy;
+    velocity[i*3+2] = vz;
+
+    // target = mismo punto (no importa, no se usa con attractMul=0)
+    targetX[i] = sx;
+    targetY[i] = sy + 0.8;
+    targetZ[i] = sz;
+
+    const b = 0.75 + warm*0.25;
+    colors[i*3+0] = 1.0 * b;
+    colors[i*3+1] = (0.68 + 0.22*Math.random()) * b;
+    colors[i*3+2] = (0.20 + 0.20*Math.random()) * b;
+
+    alphas[i] = 1.0;
+  }
+
+  pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
+  pGeom.attributes.aAlpha.needsUpdate = true;
+}
+
+// ==================== UPDATE PARTÍCULAS ====================
 function updateParticles(dt){
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
@@ -651,18 +731,20 @@ function updateParticles(dt){
     const fade = a * a;
     alphas[i] = fade;
 
-    tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
-    tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
-    tmpDir.copy(tmpTarget).sub(tmpPos);
+    // atracción solo si attractMul > 0
+    if (attractMul[i] > 0.0001){
+      tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
+      tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
+      tmpDir.copy(tmpTarget).sub(tmpPos);
 
-    const dist = tmpDir.length();
-    if (dist > 0.001){
-      tmpDir.multiplyScalar(1.0 / dist);
-      // ✅ atracción por partícula
-      const pull = TARGET_ATTRACT * attractMul[i] * dt;
-      velocity[i*3+0] += tmpDir.x * pull;
-      velocity[i*3+1] += tmpDir.y * pull;
-      velocity[i*3+2] += tmpDir.z * pull;
+      const dist = tmpDir.length();
+      if (dist > 0.001){
+        tmpDir.multiplyScalar(1.0 / dist);
+        const pull = TARGET_ATTRACT * attractMul[i] * dt;
+        velocity[i*3+0] += tmpDir.x * pull;
+        velocity[i*3+1] += tmpDir.y * pull;
+        velocity[i*3+2] += tmpDir.z * pull;
+      }
     }
 
     positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
@@ -682,27 +764,16 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== VIEWER PARTICLES (por MIDI izquierdo) ====================
-function randomViewerWorldPos(out){
+// ==================== VIEWER POS (para título y viewer particles) ====================
+function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
   const camPos = camera.getWorldPosition(tmpPos);
   camera.getWorldDirection(tmpCamDir).normalize();
   tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
   tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
 
-  const z = VIEWER_Z_NEAR + Math.random() * (VIEWER_Z_FAR - VIEWER_Z_NEAR);
-
-  let nx = (Math.random()*2 - 1);
-  let ny = (Math.random()*2 - 1);
-
-  const r = Math.hypot(nx, ny);
-  if (r < VIEWER_CENTER_HOLE){
-    const ang = Math.atan2(ny, nx);
-    nx = Math.cos(ang) * VIEWER_CENTER_HOLE;
-    ny = Math.sin(ang) * VIEWER_CENTER_HOLE;
-  }
-
-  const x = nx * VIEWER_X_MAX;
-  const y = ny * VIEWER_Y_MAX;
+  const z = zNear + Math.random() * (zFar - zNear);
+  const x = (Math.random()*2 - 1) * xMax;
+  const y = (Math.random()*2 - 1) * yMax;
 
   out.copy(camPos)
     .addScaledVector(tmpCamDir, z)
@@ -717,8 +788,31 @@ function spawnLeftViewerParticles(){
   if (Math.random() > LEFT_VIEWER_SPAWN_PROB) return;
 
   for (let s=0; s<LEFT_VIEWER_SPAWNS_PER_HIT; s++){
-    randomViewerWorldPos(tmpViewerPos);
+    randomViewerWorldPos(tmpViewerPos, VIEWER_Z_NEAR, VIEWER_Z_FAR, VIEWER_X_MAX, VIEWER_Y_MAX);
     spawnParticlesFrom(tmpViewerPos, 0.90, false);
+  }
+}
+
+// ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
+function updateTitleParticles(t, dt){
+  if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
+
+  // si el cue actual es título, concentramos más cerca del centro
+  const isTitleActive = (activeType === "title");
+
+  const zNear = isTitleActive ? 0.75 : TITLE_Z_NEAR;
+  const zFar  = isTitleActive ? 1.25 : TITLE_Z_FAR;
+  const xMax  = isTitleActive ? 0.55 : TITLE_X_MAX;
+  const yMax  = isTitleActive ? 0.32 : TITLE_Y_MAX;
+
+  titleAcc += dt * TITLE_PARTICLE_RATE;
+  const n = Math.floor(titleAcc);
+  if (n <= 0) return;
+  titleAcc -= n;
+
+  for (let i=0;i<n;i++){
+    randomViewerWorldPos(tmpViewerPos, zNear, zFar, xMax, yMax);
+    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
   }
 }
 
@@ -806,7 +900,6 @@ function viewerEndWorldPos(out){
   return out;
 }
 
-// Rastro del cometa: target al espectador + atracción multiplicada + empujón inicial
 function spawnCometTrail(worldPos, dt){
   cometTrailAcc += dt * COMET_TRAIL_RATE;
   const n = Math.floor(cometTrailAcc);
@@ -826,7 +919,7 @@ function spawnCometTrail(worldPos, dt){
 
     alive[i] = COMET_TRAIL_LIFE;
     maxLife[i] = COMET_TRAIL_LIFE;
-    attractMul[i] = COMET_ATTRACT_MUL; // ✅ más atracción
+    attractMul[i] = COMET_ATTRACT_MUL;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.024;
     const sy = worldPos.y + (Math.random()-0.5)*0.024;
@@ -836,13 +929,11 @@ function spawnCometTrail(worldPos, dt){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // cola: atrás respecto al cometa
     const back = 0.55 + Math.random()*0.70;
     let vx = -cometDir.x * back + (Math.random()-0.5)*0.06;
     let vy = -cometDir.y * back + (0.10 + Math.random()*0.22);
     let vz = -cometDir.z * back + (Math.random()-0.5)*0.06;
 
-    // empujón inicial hacia el espectador (para que se note desde el nacimiento)
     tmpDir.copy(tmpViewerEnd).sub(tmpSpawn.set(sx,sy,sz));
     const d2 = tmpDir.length();
     if (d2 > 0.0001){
@@ -856,7 +947,6 @@ function spawnCometTrail(worldPos, dt){
     velocity[i*3+1] = vy;
     velocity[i*3+2] = vz;
 
-    // target = espectador
     targetX[i] = tmpViewerEnd.x;
     targetY[i] = tmpViewerEnd.y;
     targetZ[i] = tmpViewerEnd.z;
@@ -874,7 +964,6 @@ function spawnCometTrail(worldPos, dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// Cometa: 1 vuelta completa; sprite NO se acerca (solo la cola “aspirada”)
 function updateCometIntro(t, dt){
   if (!COMET_ENABLED) { cometSprite.visible = false; cometMat.opacity = 0.0; cometInited = false; return; }
   if (t >= INTRO_NO_MIDI_SECONDS){
@@ -891,7 +980,6 @@ function updateCometIntro(t, dt){
   const fadeOut = 1.0 - smoothstep01((p - 0.92) / 0.08);
   cometMat.opacity = 0.95 * fadeIn * fadeOut;
 
-  // 1 vuelta exacta con easing elegante
   const u = smoothstep01(p) * COMET_TURNS;
   roundedRectPerimeterPoint(u, cometPos);
 
@@ -1042,7 +1130,7 @@ renderer.setAnimationLoop(()=>{
   const t = video.currentTime;
 
   while (nextCue < cues.length && t >= cues[nextCue].t){
-    setupText(cues[nextCue].text);
+    setupText(cues[nextCue].text, cues[nextCue].type || "text");
     nextCue++;
   }
 
@@ -1051,6 +1139,10 @@ renderer.setAnimationLoop(()=>{
 
   stepType(dt);
 
+  // ✅ partículas aleatorias bonitas durante el título (2–14s)
+  updateTitleParticles(t, dt);
+
+  // MIDI/háptica
   tickHaptics(t);
 
   // Intro cometa + cola aspirada al espectador (0–14s)
@@ -1150,6 +1242,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
-
-
