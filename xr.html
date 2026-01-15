@@ -33,7 +33,7 @@
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
-      ✅ Título: brillo/halo con “vida” (pulso y cambio de tono suave).
+      ✅ Título: halo + gradiente animado (dorado/naranja/marrón) como “luz que pasa”.
       ✅ Fin: el vídeo NO hace loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
@@ -300,9 +300,9 @@ let titleGlowMesh = null;
 let titleGlowTex = null;
 
 // “vida” del título (animación)
-let titleLifePhase = 0;          // avanza con dt
-let titleNeedRedraw = false;     // fuerza redraw aunque no avance el cursor
-let titleLastDrawChars = 0;      // recuerda último chars dibujado
+let titleLifePhase = 0;
+let titleNeedRedraw = false;
+let titleLastDrawChars = 0;
 
 function makeGlowTexture(){
   const c = document.createElement("canvas");
@@ -326,17 +326,58 @@ function makeGlowTexture(){
   return tex;
 }
 
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+// ==================== HELPERS COLOR/GRADIENTE ANIMADO ====================
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function clamp01(x){ return clamp(x, 0, 1); }
 function lerp(a,b,t){ return a + (b-a)*t; }
+function rgb(r,g,b,a=1){ return `rgba(${r|0},${g|0},${b|0},${a})`; }
 
-// Interpola entre dos colores RGB y devuelve "rgba(r,g,b,a)"
-function mixRGBA(c1, c2, t, a){
-  const r = Math.round(lerp(c1[0], c2[0], t));
-  const g = Math.round(lerp(c1[1], c2[1], t));
-  const b = Math.round(lerp(c1[2], c2[2], t));
-  return `rgba(${r},${g},${b},${a})`;
+// Gradiente animado “dorado-naranja-marrón” con banda luminosa que se desplaza
+function makeAnimatedTitleGradient(ctx, phase, w, h){
+  // Rotación MUY suave del eje del gradiente
+  const ang = phase * 0.20;
+  const cx = w * 0.5, cy = h * 0.5;
+  const dx = Math.cos(ang) * w * 0.55;
+  const dy = Math.sin(ang) * h * 0.55;
+
+  const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+
+  // “luz que pasa”: barrido ida/vuelta (sin)
+  const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
+
+  const band = 0.16;
+  const a0 = clamp(p - band*2.0, 0, 1);
+  const a1 = clamp(p - band*0.6, 0, 1);
+  const a2 = clamp(p,            0, 1);
+  const a3 = clamp(p + band*0.6, 0, 1);
+  const a4 = clamp(p + band*2.0, 0, 1);
+
+  const brown  = [120, 55, 20];
+  const orange = [255,140, 60];
+  const gold   = [255,214,100];
+  const hot2   = [255,245,235];
+
+  g.addColorStop(0.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a0,   rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a1,   rgb(orange[0], orange[1], orange[2], 0.98));
+  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   0.98)); // pico brillante
+  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.98));
+  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.96));
+  g.addColorStop(1.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+
+  return g;
 }
 
+// Glow (halo) también animado
+function makeAnimatedGlowColor(phase, alpha){
+  const t = 0.5 + 0.5*Math.sin(phase * 0.7);
+  const r = lerp(255, 255, t);
+  const g = lerp(140, 214, t);
+  const b = lerp( 60, 100, t);
+  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
+}
+
+// ==================== TEXTO SETUP/DRAW ====================
 function setupText(lines, type = "text"){
   activeType = type || "text";
   const isTitle = activeType === "title";
@@ -412,7 +453,6 @@ function setupText(lines, type = "text"){
     titleGlowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
     titleGlowMesh.quaternion.copy(plane.quaternion);
 
-    // reinicia “vida” para el nuevo título
     titleLifePhase = 0;
     titleNeedRedraw = true;
   } else {
@@ -430,7 +470,7 @@ function setupText(lines, type = "text"){
 function draw(chars){
   if (!ctx) return;
 
-  titleLastDrawChars = chars; // recordamos
+  titleLastDrawChars = chars;
   titleNeedRedraw = false;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -440,52 +480,34 @@ function draw(chars){
 
   const isTitle = (activeType === "title");
 
-  // --- "vida": pulso + cambio de tono suave ---
-  // tHue oscila entre 0..1 lentamente
-  const tHue = isTitle ? (0.5 + 0.5*Math.sin(titleLifePhase * 0.55)) : 0;
-  // pulse oscila 0..1 un poco más rápido
-  const pulse = isTitle ? (0.5 + 0.5*Math.sin(titleLifePhase * 2.2)) : 0;
-
-  // dos paletas (dorado <-> ámbar más rojizo)
-  const warmA = [255, 210, 140];
-  const warmB = [255, 165,  90];
-
-  const coreA = [255, 240, 220];
-  const coreB = [255, 230, 200];
-
-  // alpha dinámico (muy suave)
-  const glowBoost = isTitle ? lerp(0.90, 1.20, pulse) : 1.0;
-
-  const titleFill = mixRGBA(warmA, warmB, tHue, 0.98);
-  const titleCore = mixRGBA(coreA, coreB, tHue, 0.95);
-
-  const glow1 = mixRGBA([255,165,80],[255,135,55], tHue, 0.55);
-  const glow2 = mixRGBA([255,120,40],[255, 95,25], tHue, 0.30);
-
-  const textFill  = "rgba(255,255,255,0.96)";
-
   function drawLineWithGlow(str, x, y){
     if (!isTitle){
-      ctx.fillStyle = textFill;
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.shadowColor = "rgba(0,0,0,0.85)";
       ctx.shadowBlur = 20;
       ctx.fillText(str, x, y);
       return;
     }
 
-    // halo grande (pulse)
+    const pulse = 0.5 + 0.5*Math.sin(titleLifePhase * 2.0);
+    const glowBoost = 0.95 + 0.35*pulse;
+
+    const glowBig = makeAnimatedGlowColor(titleLifePhase, 0.28);
+    const glowMid = makeAnimatedGlowColor(titleLifePhase, 0.55);
+
+    // halo grande
     ctx.save();
-    ctx.fillStyle = glow2;
-    ctx.shadowColor = glow2;
-    ctx.shadowBlur = 55 * glowBoost;
+    ctx.fillStyle = glowBig;
+    ctx.shadowColor = glowBig;
+    ctx.shadowBlur = 58 * glowBoost;
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // halo medio (pulse)
+    // halo medio
     ctx.save();
-    ctx.fillStyle = glow1;
-    ctx.shadowColor = glow1;
-    ctx.shadowBlur = 28 * glowBoost;
+    ctx.fillStyle = glowMid;
+    ctx.shadowColor = glowMid;
+    ctx.shadowBlur = 30 * glowBoost;
     ctx.fillText(str, x, y);
     ctx.restore();
 
@@ -497,20 +519,21 @@ function draw(chars){
     ctx.strokeText(str, x, y);
     ctx.restore();
 
-    // relleno
+    // relleno con gradiente animado (“luz que pasa”)
     ctx.save();
-    ctx.fillStyle = titleFill;
+    const grad = makeAnimatedTitleGradient(ctx, titleLifePhase, canvas.width, canvas.height);
+    ctx.fillStyle = grad;
     ctx.shadowColor = "rgba(0,0,0,0.35)";
     ctx.shadowBlur = 6;
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // núcleo luminoso (pulse)
+    // núcleo (extra de brillo)
     ctx.save();
-    ctx.fillStyle = titleCore;
-    ctx.shadowColor = titleCore;
-    ctx.shadowBlur = 10 * glowBoost;
-    ctx.globalAlpha = 0.45 + 0.20*pulse;
+    ctx.globalAlpha = 0.18 + 0.16*pulse;
+    ctx.fillStyle = "rgba(255,245,235,1.0)";
+    ctx.shadowColor = "rgba(255,235,210,0.9)";
+    ctx.shadowBlur = 14 * glowBoost;
     ctx.fillText(str, x, y);
     ctx.restore();
   }
@@ -550,24 +573,22 @@ function stepType(dt){
   }
 }
 
-// actualiza la “vida” del título aunque el typing ya haya terminado
+// redibuja el título aunque el typing haya terminado (para animar gradiente/halo)
 function updateTitleLife(dt){
   if (activeType !== "title") return;
 
-  // avanza fase
   titleLifePhase += dt;
 
-  // fuerza redraw a ~20 fps para que el glow cambie suave sin gastar demasiado
-  // (si quieres aún más suave, sube 20->30)
-  const FPS = 20;
+  // Redraw a ~24 fps (equilibrio calidad/coste)
+  const FPS = 24;
   if (Math.floor(titleLifePhase * FPS) !== Math.floor((titleLifePhase - dt) * FPS)){
     titleNeedRedraw = true;
   }
 
-  // anima el panel 3D (opacidad + leve “respirar” de escala)
+  // panel glow 3D: respira y cambia sutilmente
   if (titleGlowMesh){
     const pulse = 0.5 + 0.5*Math.sin(titleLifePhase * 2.0);
-    titleGlowMesh.material.opacity = 0.85 + 0.25*pulse;
+    titleGlowMesh.material.opacity = 0.78 + 0.30*pulse;
 
     const s = 1.0 + 0.02*pulse;
     titleGlowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
@@ -1336,13 +1357,9 @@ renderer.setAnimationLoop(()=>{
   prevVideoT = t;
 
   stepType(dt);
+  updateTitleLife(dt);     // ✅ anima gradiente del título
 
-  // ✅ “vida” del título (pulso + cambio tono + panel glow respirando)
-  updateTitleLife(dt);
-
-  // (opcional) partículas suaves alrededor del título en 2–14s
-  updateTitleParticles(t, dt);
-
+  updateTitleParticles(t, dt); // opcional
   tickHaptics(t);
   updateCometIntro(t, dt);
 
