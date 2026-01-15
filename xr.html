@@ -35,6 +35,7 @@
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso atraído hacia el espectador.
       ✅ Título con halo + gradiente animado (“luz que pasa”).
       ✅ Textos NO desaparecen al entrar el siguiente: hacen fade out a los 10s.
+      ✅ Partículas del título (inicio) ahora se mueven hacia el espectador.
       ✅ Fin: vídeo sin loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
@@ -291,7 +292,6 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
 
   const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
 
-  // barrido ida/vuelta (luz que pasa)
   const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
   const band = 0.16;
 
@@ -326,9 +326,8 @@ function makeAnimatedGlowColor(phase, alpha){
 }
 
 // ==================== TEXTO “ESCRITURA” + FADE OUT ====================
-// ✅ Fade out: a los 10s empieza a desaparecer
-const TEXT_FADE_DELAY = 10.0; // segundos antes del fade
-const TEXT_FADE_DUR   = 1.4;  // duración del fade
+const TEXT_FADE_DELAY = 10.0;
+const TEXT_FADE_DUR   = 1.4;
 
 const pad = 36;
 const TEXT_Z = -1.25;
@@ -345,11 +344,9 @@ let activeLineH = 78;
 let cursor = 0, nextT = 0;
 let prevVideoT = 0;
 
-// En vez de 1 plano, guardamos varios objetos texto
-const textObjects = []; // {plane, mat, texture, canvas, ctx, fullLines, fullWidths, fullText, isTitle, createdAt, lifePhase, lastDrawChars, needRedraw, glowMesh}
+const textObjects = [];
 let activeObj = null;
 
-// Glow base texture compartida
 let titleGlowTex = null;
 
 function makeGlowTexture(){
@@ -383,7 +380,6 @@ function setupText(lines, type = "text"){
 
   const fullLines = Array.isArray(lines) ? lines : [String(lines)];
 
-  // medir
   const mctx = document.createElement("canvas").getContext("2d");
   mctx.font = `${activeFontPx}px ${fontName()}`;
   const fullWidths = fullLines.map(l => mctx.measureText(l).width);
@@ -415,7 +411,6 @@ function setupText(lines, type = "text"){
   plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
   scene.add(plane);
 
-  // Glow 3D (por objeto título)
   let glowMesh = null;
   if (isTitle){
     if (!titleGlowTex) titleGlowTex = makeGlowTexture();
@@ -447,13 +442,11 @@ function setupText(lines, type = "text"){
     createdAt: video.currentTime,
     lifePhase: 0,
     lastDrawChars: 0,
-    needRedraw: false,
     glowMesh
   };
 
   textObjects.push(obj);
 
-  // este será el que “se escribe”
   activeObj = obj;
   cursor = 0;
   nextT = 0;
@@ -464,7 +457,6 @@ function drawObj(obj, chars){
   if (!obj) return;
 
   obj.lastDrawChars = chars;
-  obj.needRedraw = false;
 
   const { ctx, canvas, texture, fullLines, fullWidths, fullText, isTitle } = obj;
 
@@ -489,7 +481,6 @@ function drawObj(obj, chars){
     const glowBig = makeAnimatedGlowColor(phase, 0.28);
     const glowMid = makeAnimatedGlowColor(phase, 0.55);
 
-    // halo grande
     ctx.save();
     ctx.fillStyle = glowBig;
     ctx.shadowColor = glowBig;
@@ -497,7 +488,6 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // halo medio
     ctx.save();
     ctx.fillStyle = glowMid;
     ctx.shadowColor = glowMid;
@@ -505,7 +495,6 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // contorno sutil
     ctx.save();
     ctx.lineWidth = Math.max(2, activeFontPx * 0.06);
     ctx.strokeStyle = "rgba(120, 55, 20, 0.25)";
@@ -513,7 +502,6 @@ function drawObj(obj, chars){
     ctx.strokeText(str, x, y);
     ctx.restore();
 
-    // relleno con gradiente animado (“luz que pasa”)
     ctx.save();
     const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
     ctx.fillStyle = grad;
@@ -522,9 +510,9 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // núcleo extra
+    // ✅ tu cambio: menos “quemado”
     ctx.save();
-    ctx.globalAlpha = 0.06 + 0.16*pulse;
+    ctx.globalAlpha = 0.06; // <- aquí
     ctx.fillStyle = "rgba(255,245,235,1.0)";
     ctx.shadowColor = "rgba(255,235,210,0.9)";
     ctx.shadowBlur = 14 * glowBoost;
@@ -571,7 +559,6 @@ function stepType(dt){
   }
 }
 
-// anima el “título” (gradiente/halo) aunque ya haya terminado de escribirse
 function updateTitleLives(dt){
   const FPS = 24;
 
@@ -581,17 +568,14 @@ function updateTitleLives(dt){
     const prev = o.lifePhase;
     o.lifePhase += dt;
 
-    // respirar glow 3D por objeto
     if (o.glowMesh){
       const pulse = 0.5 + 0.5*Math.sin(o.lifePhase * 2.0);
-      // el fade global del texto lo controla updateTextFadeAndCleanup, aquí solo modulamos
       o.glowMesh.material.opacity = o.mat.opacity * (0.78 + 0.30*pulse);
 
       const s = 1.0 + 0.02*pulse;
       o.glowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
     }
 
-    // redraw a ~24fps para que “se mueva” el gradiente
     if (Math.floor(o.lifePhase * FPS) !== Math.floor(prev * FPS)){
       drawObj(o, o.lastDrawChars);
     }
@@ -614,12 +598,9 @@ function updateTextFadeAndCleanup(t){
 
     if (o.glowMesh){
       o.glowMesh.visible = op > 0.001;
-      // la opacidad final del glow se ajusta en updateTitleLives (multiplicada por mat.opacity)
-      // aquí solo aseguramos que no se quede “encendido” al 0
       if (op <= 0.001) o.glowMesh.material.opacity = 0.0;
     }
 
-    // limpieza al acabar el fade
     if (age > TEXT_FADE_DELAY + TEXT_FADE_DUR + 0.15){
       scene.remove(o.plane);
       o.plane.geometry.dispose();
@@ -712,17 +693,24 @@ const VIEWER_Z_FAR  = 1.35;
 const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
 
-// (opcional) partículas suaves cerca del título 2–14s (si no quieres: pon RATE=0)
+// ==================== TÍTULO: PARTÍCULAS ALEATORIAS (2–14s) ====================
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
-const TITLE_PARTICLE_RATE = 18;
+
+const TITLE_PARTICLE_RATE = 18;   // si quieres más/menos
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
+
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.25;
 const TITLE_X_MAX  = 0.42;
 const TITLE_Y_MAX  = 0.22;
+
 let titleAcc = 0;
+
+// ✅ NUEVO: “hacia el espectador”
+const TITLE_TO_VIEWER_PUSH = 0.42;  // fuerza inicial hacia cámara
+const TITLE_TO_VIEWER_ATTRACT = 0.70; // atracción continua hacia cámara
 
 // ==================== COMETA INTRO (0–14s) ====================
 const INTRO_NO_MIDI_SECONDS = 14.0;
@@ -853,6 +841,7 @@ const tmpCamRight = new THREE.Vector3();
 const tmpViewerPos = new THREE.Vector3();
 const tmpViewerEnd = new THREE.Vector3();
 const tmpLocal = new THREE.Vector3();
+const tmpCamPos = new THREE.Vector3();
 
 let cometTrailAcc = 0;
 let cometInited = false;
@@ -916,8 +905,8 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// spawn title-area particles (opcional)
-function spawnTitleParticlesAt(worldPos, warm){
+// ✅ MODIFICADO: partículas del título ahora van hacia el espectador
+function spawnTitleParticlesAt(worldPos, warm, camPos){
   const COUNT = 2;
 
   for (let k=0;k<COUNT;k++){
@@ -926,7 +915,9 @@ function spawnTitleParticlesAt(worldPos, warm){
 
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
-    attractMul[i] = 0.0;
+
+    // atracción activa hacia cámara (para que realmente “vayan al espectador”)
+    attractMul[i] = TITLE_TO_VIEWER_ATTRACT;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.05;
     const sy = worldPos.y + (Math.random()-0.5)*0.05;
@@ -936,13 +927,27 @@ function spawnTitleParticlesAt(worldPos, warm){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    velocity[i*3+0] = (Math.random()-0.5)*0.045;
-    velocity[i*3+1] = 0.20 + Math.random()*0.10;
-    velocity[i*3+2] = (Math.random()-0.5)*0.045;
+    // dirección hacia cámara
+    tmpDir.copy(camPos).sub(tmpSpawn.set(sx,sy,sz));
+    const d = tmpDir.length();
+    if (d > 0.0001) tmpDir.multiplyScalar(1/d);
+    else tmpDir.set(0,0,1);
 
-    targetX[i] = sx;
-    targetY[i] = sy + 0.8;
-    targetZ[i] = sz;
+    // velocidad base hacia cámara + pequeña dispersión
+    const base = TITLE_TO_VIEWER_PUSH * (0.75 + Math.random()*0.55);
+
+    const vx = tmpDir.x * base + (Math.random()-0.5)*0.03;
+    const vy = tmpDir.y * base + (Math.random()-0.5)*0.03;
+    const vz = tmpDir.z * base + (Math.random()-0.5)*0.03;
+
+    velocity[i*3+0] = vx;
+    velocity[i*3+1] = vy;
+    velocity[i*3+2] = vz;
+
+    // target = cámara (para que siga yendo hacia el espectador)
+    targetX[i] = camPos.x;
+    targetY[i] = camPos.y;
+    targetZ[i] = camPos.z;
 
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
@@ -1028,23 +1033,22 @@ function spawnLeftViewerParticles(){
   }
 }
 
+// ✅ MODIFICADO: spawns del título -> siempre con target = cámara (hacia espectador)
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
-
-  const zNear = TITLE_Z_NEAR;
-  const zFar  = TITLE_Z_FAR;
-  const xMax  = TITLE_X_MAX;
-  const yMax  = TITLE_Y_MAX;
 
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
   if (n <= 0) return;
   titleAcc -= n;
 
+  // posición de la cámara una vez por frame
+  camera.getWorldPosition(tmpCamPos);
+
   for (let i=0;i<n;i++){
-    randomViewerWorldPos(tmpViewerPos, zNear, zFar, xMax, yMax);
-    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
+    randomViewerWorldPos(tmpViewerPos, TITLE_Z_NEAR, TITLE_Z_FAR, TITLE_X_MAX, TITLE_Y_MAX);
+    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM, tmpCamPos);
   }
 }
 
@@ -1362,7 +1366,6 @@ renderer.setAnimationLoop(()=>{
 
   const t = video.currentTime;
 
-  // cues
   while (nextCue < cues.length && t >= cues[nextCue].t){
     setupText(cues[nextCue].text, cues[nextCue].type || "text");
     nextCue++;
@@ -1372,14 +1375,10 @@ renderer.setAnimationLoop(()=>{
   prevVideoT = t;
 
   stepType(dt);
-
-  // ✅ anima gradiente/halo de TODOS los títulos visibles
   updateTitleLives(dt);
-
-  // ✅ fade out de TODOS los textos a los 10s + limpieza
   updateTextFadeAndCleanup(t);
 
-  // opcional: partículas suaves por zona título
+  // ✅ ahora estas partículas se mueven hacia el espectador
   updateTitleParticles(t, dt);
 
   tickHaptics(t);
@@ -1393,6 +1392,9 @@ renderer.setAnimationLoop(()=>{
   updateParticles(dt);
   renderer.render(scene, camera);
 });
+
+// ==================== CUES LIST ====================
+const cues = [...CUES].sort((a,b)=>a.t-b.t);
 
 // ==================== BOTONES ====================
 const btnStart = document.getElementById("start");
@@ -1483,4 +1485,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
