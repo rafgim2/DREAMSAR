@@ -35,8 +35,8 @@
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso atraído hacia el espectador.
       ✅ Título con halo + gradiente animado (“luz que pasa”).
       ✅ Textos NO desaparecen al entrar el siguiente: hacen fade out a los 10s.
-      ✅ Partículas del título (inicio) ahora se mueven hacia el espectador.
       ✅ Fin: vídeo sin loop; al terminar se cierra AR/VR automáticamente.
+      ✅ Partículas iniciales del título: ahora se mueven hacia el espectador.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -292,6 +292,7 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
 
   const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
 
+  // barrido ida/vuelta (luz que pasa)
   const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
   const band = 0.16;
 
@@ -326,8 +327,8 @@ function makeAnimatedGlowColor(phase, alpha){
 }
 
 // ==================== TEXTO “ESCRITURA” + FADE OUT ====================
-const TEXT_FADE_DELAY = 10.0;
-const TEXT_FADE_DUR   = 1.4;
+const TEXT_FADE_DELAY = 10.0; // segundos antes del fade
+const TEXT_FADE_DUR   = 1.4;  // duración del fade
 
 const pad = 36;
 const TEXT_Z = -1.25;
@@ -481,6 +482,7 @@ function drawObj(obj, chars){
     const glowBig = makeAnimatedGlowColor(phase, 0.28);
     const glowMid = makeAnimatedGlowColor(phase, 0.55);
 
+    // halo grande
     ctx.save();
     ctx.fillStyle = glowBig;
     ctx.shadowColor = glowBig;
@@ -488,6 +490,7 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
+    // halo medio
     ctx.save();
     ctx.fillStyle = glowMid;
     ctx.shadowColor = glowMid;
@@ -495,6 +498,7 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
+    // contorno sutil
     ctx.save();
     ctx.lineWidth = Math.max(2, activeFontPx * 0.06);
     ctx.strokeStyle = "rgba(120, 55, 20, 0.25)";
@@ -502,6 +506,7 @@ function drawObj(obj, chars){
     ctx.strokeText(str, x, y);
     ctx.restore();
 
+    // relleno con gradiente animado (“luz que pasa”)
     ctx.save();
     const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
     ctx.fillStyle = grad;
@@ -510,9 +515,9 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // ✅ tu cambio: menos “quemado”
+    // núcleo extra (ajustado por ti a 0.06 para evitar “quemado”)
     ctx.save();
-    ctx.globalAlpha = 0.06; // <- aquí
+    ctx.globalAlpha = 0.06;
     ctx.fillStyle = "rgba(255,245,235,1.0)";
     ctx.shadowColor = "rgba(255,235,210,0.9)";
     ctx.shadowBlur = 14 * glowBoost;
@@ -697,20 +702,25 @@ const VIEWER_Y_MAX  = 0.45;
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
 
-const TITLE_PARTICLE_RATE = 18;   // si quieres más/menos
+const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
 
+// zona (spawn) cerca de donde miras / cerca del título
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.25;
 const TITLE_X_MAX  = 0.42;
 const TITLE_Y_MAX  = 0.22;
 
-let titleAcc = 0;
+// ✅ NUEVO: objetivo más cerca del espectador (para que vayan “hacia ti”)
+const TITLE_TO_VIEWER_Z_NEAR = 0.18;
+const TITLE_TO_VIEWER_Z_FAR  = 0.40;
+const TITLE_TO_VIEWER_X_MAX  = 0.18;
+const TITLE_TO_VIEWER_Y_MAX  = 0.10;
+const TITLE_TO_VIEWER_ATTR_MUL = 2.6;   // fuerza de atracción
+const TITLE_TO_VIEWER_PUSH = 0.18;      // empuje inicial hacia el espectador
 
-// ✅ NUEVO: “hacia el espectador”
-const TITLE_TO_VIEWER_PUSH = 0.42;  // fuerza inicial hacia cámara
-const TITLE_TO_VIEWER_ATTRACT = 0.70; // atracción continua hacia cámara
+let titleAcc = 0;
 
 // ==================== COMETA INTRO (0–14s) ====================
 const INTRO_NO_MIDI_SECONDS = 14.0;
@@ -841,7 +851,6 @@ const tmpCamRight = new THREE.Vector3();
 const tmpViewerPos = new THREE.Vector3();
 const tmpViewerEnd = new THREE.Vector3();
 const tmpLocal = new THREE.Vector3();
-const tmpCamPos = new THREE.Vector3();
 
 let cometTrailAcc = 0;
 let cometInited = false;
@@ -853,6 +862,36 @@ const cometDir  = new THREE.Vector3();
 function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
 function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
 function smoothstep01(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
+
+// ==================== VIEWER POS ====================
+function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
+  const camPos = camera.getWorldPosition(tmpPos);
+  camera.getWorldDirection(tmpCamDir).normalize();
+  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
+  tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
+
+  const z = zNear + Math.random() * (zFar - zNear);
+  const x = (Math.random()*2 - 1) * xMax;
+  const y = (Math.random()*2 - 1) * yMax;
+
+  out.copy(camPos)
+    .addScaledVector(tmpCamDir, z)
+    .addScaledVector(tmpCamRight, x)
+    .addScaledVector(tmpCamUp, y);
+
+  return out;
+}
+
+// ✅ objetivo cerca del espectador (para partículas del título)
+function randomNearViewerTarget(out){
+  return randomViewerWorldPos(
+    out,
+    TITLE_TO_VIEWER_Z_NEAR,
+    TITLE_TO_VIEWER_Z_FAR,
+    TITLE_TO_VIEWER_X_MAX,
+    TITLE_TO_VIEWER_Y_MAX
+  );
+}
 
 // spawn midi particles
 function spawnParticlesFrom(worldPos, warm, isRightSide){
@@ -905,8 +944,8 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ✅ MODIFICADO: partículas del título ahora van hacia el espectador
-function spawnTitleParticlesAt(worldPos, warm, camPos){
+// ✅ spawn title-area particles: ahora VAN HACIA EL ESPECTADOR
+function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
   for (let k=0;k<COUNT;k++){
@@ -916,8 +955,8 @@ function spawnTitleParticlesAt(worldPos, warm, camPos){
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
 
-    // atracción activa hacia cámara (para que realmente “vayan al espectador”)
-    attractMul[i] = TITLE_TO_VIEWER_ATTRACT;
+    // ✅ antes: 0.0 libre. Ahora: atracción hacia un target cerca del espectador
+    attractMul[i] = TITLE_TO_VIEWER_ATTR_MUL;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.05;
     const sy = worldPos.y + (Math.random()-0.5)*0.05;
@@ -927,27 +966,30 @@ function spawnTitleParticlesAt(worldPos, warm, camPos){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // dirección hacia cámara
-    tmpDir.copy(camPos).sub(tmpSpawn.set(sx,sy,sz));
+    // target cerca del espectador
+    randomNearViewerTarget(tmpTarget);
+    targetX[i] = tmpTarget.x;
+    targetY[i] = tmpTarget.y;
+    targetZ[i] = tmpTarget.z;
+
+    // velocidad base suave
+    let vx = (Math.random()-0.5)*0.030;
+    let vy = (Math.random()-0.5)*0.030;
+    let vz = (Math.random()-0.5)*0.030;
+
+    // ✅ empuje inicial hacia el target (hacia el espectador)
+    tmpDir.copy(tmpTarget).sub(tmpSpawn.set(sx,sy,sz));
     const d = tmpDir.length();
-    if (d > 0.0001) tmpDir.multiplyScalar(1/d);
-    else tmpDir.set(0,0,1);
-
-    // velocidad base hacia cámara + pequeña dispersión
-    const base = TITLE_TO_VIEWER_PUSH * (0.75 + Math.random()*0.55);
-
-    const vx = tmpDir.x * base + (Math.random()-0.5)*0.03;
-    const vy = tmpDir.y * base + (Math.random()-0.5)*0.03;
-    const vz = tmpDir.z * base + (Math.random()-0.5)*0.03;
+    if (d > 0.0001){
+      tmpDir.multiplyScalar(1.0 / d);
+      vx += tmpDir.x * TITLE_TO_VIEWER_PUSH;
+      vy += tmpDir.y * TITLE_TO_VIEWER_PUSH;
+      vz += tmpDir.z * TITLE_TO_VIEWER_PUSH;
+    }
 
     velocity[i*3+0] = vx;
     velocity[i*3+1] = vy;
     velocity[i*3+2] = vz;
-
-    // target = cámara (para que siga yendo hacia el espectador)
-    targetX[i] = camPos.x;
-    targetY[i] = camPos.y;
-    targetZ[i] = camPos.z;
 
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
@@ -1005,24 +1047,6 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
-  const camPos = camera.getWorldPosition(tmpPos);
-  camera.getWorldDirection(tmpCamDir).normalize();
-  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
-  tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
-
-  const z = zNear + Math.random() * (zFar - zNear);
-  const x = (Math.random()*2 - 1) * xMax;
-  const y = (Math.random()*2 - 1) * yMax;
-
-  out.copy(camPos)
-    .addScaledVector(tmpCamDir, z)
-    .addScaledVector(tmpCamRight, x)
-    .addScaledVector(tmpCamUp, y);
-
-  return out;
-}
-
 function spawnLeftViewerParticles(){
   if (!LEFT_VIEWER_PARTICLES) return;
   if (Math.random() > LEFT_VIEWER_SPAWN_PROB) return;
@@ -1033,7 +1057,7 @@ function spawnLeftViewerParticles(){
   }
 }
 
-// ✅ MODIFICADO: spawns del título -> siempre con target = cámara (hacia espectador)
+// ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
@@ -1043,12 +1067,10 @@ function updateTitleParticles(t, dt){
   if (n <= 0) return;
   titleAcc -= n;
 
-  // posición de la cámara una vez por frame
-  camera.getWorldPosition(tmpCamPos);
-
   for (let i=0;i<n;i++){
+    // spawn en una caja “cerca de donde miras” (suele coincidir con zona título)
     randomViewerWorldPos(tmpViewerPos, TITLE_Z_NEAR, TITLE_Z_FAR, TITLE_X_MAX, TITLE_Y_MAX);
-    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM, tmpCamPos);
+    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
   }
 }
 
@@ -1378,7 +1400,7 @@ renderer.setAnimationLoop(()=>{
   updateTitleLives(dt);
   updateTextFadeAndCleanup(t);
 
-  // ✅ ahora estas partículas se mueven hacia el espectador
+  // ✅ partículas iniciales del título: ahora “hacia el espectador”
   updateTitleParticles(t, dt);
 
   tickHaptics(t);
@@ -1392,9 +1414,6 @@ renderer.setAnimationLoop(()=>{
   updateParticles(dt);
   renderer.render(scene, camera);
 });
-
-// ==================== CUES LIST ====================
-const cues = [...CUES].sort((a,b)=>a.t-b.t);
 
 // ==================== BOTONES ====================
 const btnStart = document.getElementById("start");
