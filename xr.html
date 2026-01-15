@@ -33,8 +33,7 @@
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
-      Título (2–14s): partículas aleatorias suaves alrededor del título.
-      ✅ Aura: partículas nacen desde los trazos reales del título.
+      ✅ Título: ahora tiene brillo/halo (sin partículas naciendo del texto).
       ✅ Fin: el vídeo NO hace loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
@@ -124,20 +123,22 @@ video.addEventListener("error", () => {
   log("❌ Error video: " + (e ? (e.code + " " + e.message) : "desconocido"));
 });
 
+const videoTex = new THREE.VideoTexture(video);
+videoTex.colorSpace = THREE.SRGBColorSpace;
+
 // ✅ Al terminar: salir de AR/VR automáticamente
 video.addEventListener("ended", async () => {
   log("⏹ Vídeo finalizado → saliendo de la experiencia");
+
   const s = renderer.xr.getSession?.();
   if (s){
     try{ await s.end(); }catch{}
   }
+
   overlay.style.display = "grid";
   btnAR.disabled = true;
   btnVR.disabled = true;
 });
-
-const videoTex = new THREE.VideoTexture(video);
-videoTex.colorSpace = THREE.SRGBColorSpace;
 
 // ===== Máscara redondeada para recortar el vídeo =====
 function makeRoundedAlphaMask(size = 512, r = 70){
@@ -294,21 +295,31 @@ let activeType = "text";
 let activeFontPx = 56;
 let activeLineH = 78;
 
-// ==================== AURA PARTÍCULAS DEL TÍTULO (desde píxeles del texto) ====================
-let auraCanvas = null;
-let auraCtx = null;
-let auraImageData = null;
-let auraW = 220;
-let auraH = 110;
+// ---- Glow 3D detrás del título ----
+let titleGlowMesh = null;
+let titleGlowTex = null;
 
-let titlePlaneW = 0;
-let titlePlaneH = 0;
+function makeGlowTexture(){
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 256;
+  const cx = c.getContext("2d");
+  cx.clearRect(0,0,256,256);
 
-let auraAcc = 0;
-let auraSampleAcc = 0;
-const AURA_SPAWN_RATE = 65;
-const AURA_REFRESH_HZ = 12;
-const AURA_ALPHA_TH = 25;
+  const g = cx.createRadialGradient(128,128,0,128,128,110);
+  g.addColorStop(0.0, "rgba(255, 190, 110, 0.60)");
+  g.addColorStop(0.45,"rgba(255, 140,  60, 0.22)");
+  g.addColorStop(1.0, "rgba(0, 0, 0, 0)");
+
+  cx.fillStyle = g;
+  cx.fillRect(0,0,256,256);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
 
 function setupText(lines, type = "text"){
   activeType = type || "text";
@@ -345,19 +356,6 @@ function setupText(lines, type = "text"){
   const physicalH = isTitle ? 0.36 : 0.30;
   const physicalW = physicalH * aspect;
 
-  // Guardamos tamaño físico del plano del título para el aura
-  if (isTitle) {
-    titlePlaneW = physicalW;
-    titlePlaneH = physicalH;
-
-    if (!auraCanvas) {
-      auraCanvas = document.createElement("canvas");
-      auraCanvas.width = auraW;
-      auraCanvas.height = auraH;
-      auraCtx = auraCanvas.getContext("2d", { willReadFrequently: true });
-    }
-  }
-
   plane = new THREE.Mesh(
     new THREE.PlaneGeometry(physicalW, physicalH),
     new THREE.MeshBasicMaterial({ map: texture, transparent:true, depthWrite:false })
@@ -365,6 +363,41 @@ function setupText(lines, type = "text"){
 
   plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
   scene.add(plane);
+
+  // ---- Glow 3D detrás del título ----
+  if (isTitle){
+    if (!titleGlowTex) titleGlowTex = makeGlowTexture();
+
+    if (!titleGlowMesh){
+      const gm = new THREE.MeshBasicMaterial({
+        map: titleGlowTex,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        opacity: 1.0
+      });
+
+      const gw = physicalW * 1.25;
+      const gh = physicalH * 1.55;
+
+      titleGlowMesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), gm);
+      titleGlowMesh.renderOrder = 998;
+      scene.add(titleGlowMesh);
+    } else {
+      const gw = physicalW * 1.25;
+      const gh = physicalH * 1.55;
+      titleGlowMesh.geometry.dispose();
+      titleGlowMesh.geometry = new THREE.PlaneGeometry(gw, gh);
+      titleGlowMesh.material.opacity = 1.0;
+      titleGlowMesh.visible = true;
+    }
+
+    titleGlowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
+    titleGlowMesh.quaternion.copy(plane.quaternion);
+  } else {
+    if (titleGlowMesh) titleGlowMesh.visible = false;
+  }
 
   fullText = fullLines.join("\n");
   cursor = 0;
@@ -377,13 +410,68 @@ function draw(chars){
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${activeFontPx}px ${fontName()}`;
-  ctx.fillStyle = (activeType === "title")
-    ? "rgba(180, 100, 40, 0.98)"
-    : "rgba(255,255,255,0.96)";
-  ctx.shadowColor = "rgba(0,0,0,0.85)";
-  ctx.shadowBlur = 20;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+
+  const isTitle = (activeType === "title");
+
+  const titleFill = "rgba(255, 210, 140, 0.98)";
+  const titleCore = "rgba(255, 235, 210, 0.95)";
+  const titleGlow1 = "rgba(255, 165,  80, 0.55)";
+  const titleGlow2 = "rgba(255, 120,  40, 0.30)";
+
+  const textFill  = "rgba(255,255,255,0.96)";
+
+  function drawLineWithGlow(str, x, y){
+    if (!isTitle){
+      ctx.fillStyle = textFill;
+      ctx.shadowColor = "rgba(0,0,0,0.85)";
+      ctx.shadowBlur = 20;
+      ctx.fillText(str, x, y);
+      return;
+    }
+
+    // halo grande
+    ctx.save();
+    ctx.fillStyle = titleGlow2;
+    ctx.shadowColor = titleGlow2;
+    ctx.shadowBlur = 55;
+    ctx.fillText(str, x, y);
+    ctx.restore();
+
+    // halo medio
+    ctx.save();
+    ctx.fillStyle = titleGlow1;
+    ctx.shadowColor = titleGlow1;
+    ctx.shadowBlur = 28;
+    ctx.fillText(str, x, y);
+    ctx.restore();
+
+    // contorno sutil
+    ctx.save();
+    ctx.lineWidth = Math.max(2, activeFontPx * 0.06);
+    ctx.strokeStyle = "rgba(120, 55, 20, 0.25)";
+    ctx.shadowBlur = 0;
+    ctx.strokeText(str, x, y);
+    ctx.restore();
+
+    // relleno cálido brillante
+    ctx.save();
+    ctx.fillStyle = titleFill;
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 6;
+    ctx.fillText(str, x, y);
+    ctx.restore();
+
+    // núcleo luminoso
+    ctx.save();
+    ctx.fillStyle = titleCore;
+    ctx.shadowColor = titleCore;
+    ctx.shadowBlur = 10;
+    ctx.globalAlpha = 0.55;
+    ctx.fillText(str, x, y);
+    ctx.restore();
+  }
 
   const visible = fullText.slice(0, chars).split("\n");
   const cx = canvas.width / 2;
@@ -399,36 +487,12 @@ function draw(chars){
     ctx.beginPath();
     ctx.rect(left, y - activeLineH/2, vw, activeLineH);
     ctx.clip();
-    ctx.fillText(full, cx, y);
+
+    drawLineWithGlow(full, cx, y);
+
     ctx.restore();
 
     y += activeLineH;
-  }
-
-  // ---- Aura mask: dibujamos el título en un canvas pequeño para muestrear píxeles ----
-  if (activeType === "title" && auraCtx) {
-    auraCtx.clearRect(0, 0, auraW, auraH);
-    auraCtx.save();
-    auraCtx.translate(auraW / 2, auraH / 2);
-
-    const scale = 0.85;
-    auraCtx.scale(scale, scale);
-    auraCtx.font = `${Math.floor(activeFontPx * 0.9)}px ${fontName()}`;
-    auraCtx.fillStyle = "rgba(255,255,255,1)";
-    auraCtx.textAlign = "center";
-    auraCtx.textBaseline = "middle";
-
-    const visLines = fullText.slice(0, chars).split("\n");
-
-    let yy = -((fullLines.length - 1) * 0.5) * (activeLineH * 0.38);
-    for (let i = 0; i < fullLines.length; i++) {
-      const vis = visLines[i] || "";
-      auraCtx.fillText(vis, 0, yy);
-      yy += (activeLineH * 0.38);
-    }
-
-    auraCtx.restore();
-    auraImageData = null;
   }
 
   texture.needsUpdate = true;
@@ -520,7 +584,7 @@ const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
 const VIEWER_CENTER_HOLE = 0.18;
 
-// ==================== TÍTULO: PARTÍCULAS ALEATORIAS (2–14s) ====================
+// ==================== (se mantiene) PARTÍCULAS ALEATORIAS 2–14s (zona título), PERO NO DESDE EL TEXTO ====================
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
 
@@ -577,6 +641,7 @@ const alive     = new Float32Array(MAX_PARTICLES);
 const maxLife   = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
+// multiplicador de atracción por partícula (1 normal, cometa más fuerte, 0 = libre)
 const attractMul = new Float32Array(MAX_PARTICLES);
 
 const targetX = new Float32Array(MAX_PARTICLES);
@@ -738,7 +803,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== SPAWN “LIBRE” PARA TÍTULO (más dorado + concentrado) ====================
+// ==================== SPAWN “LIBRE” PARA ZONA TÍTULO (NO DESDE TEXTO) ====================
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
@@ -857,8 +922,10 @@ function spawnLeftViewerParticles(){
   }
 }
 
-// ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
+// ==================== PARTÍCULAS ALEATORIAS (2–14s) ZONA TÍTULO (opcional) ====================
+// Si NO quieres ninguna partícula alrededor del título, pon TITLE_PARTICLE_RATE = 0.
 function updateTitleParticles(t, dt){
+  if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
 
   const isTitleActive = (activeType === "title");
@@ -876,59 +943,6 @@ function updateTitleParticles(t, dt){
   for (let i=0;i<n;i++){
     randomViewerWorldPos(tmpViewerPos, zNear, zFar, xMax, yMax);
     spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
-  }
-}
-
-// ==================== AURA DEL TÍTULO (desde píxeles del texto) ====================
-function updateTitleAuraFromPixels(dt){
-  if (activeType !== "title") return;
-  if (!plane || !auraCtx) return;
-
-  auraSampleAcc += dt * AURA_REFRESH_HZ;
-  if (auraSampleAcc >= 1.0) {
-    auraSampleAcc -= 1.0;
-    try {
-      auraImageData = auraCtx.getImageData(0, 0, auraW, auraH);
-    } catch {
-      auraImageData = null;
-    }
-  }
-  if (!auraImageData) return;
-
-  auraAcc += dt * AURA_SPAWN_RATE;
-  const n = Math.floor(auraAcc);
-  if (n <= 0) return;
-  auraAcc -= n;
-
-  const data = auraImageData.data;
-
-  for (let k=0; k<n; k++){
-    let px = 0, py = 0, ok = false;
-
-    for (let tries=0; tries<14; tries++){
-      px = (Math.random() * auraW) | 0;
-      py = (Math.random() * auraH) | 0;
-      const idx = (py * auraW + px) * 4 + 3;
-      if (data[idx] > AURA_ALPHA_TH){
-        ok = true;
-        break;
-      }
-    }
-    if (!ok) continue;
-
-    const u = (px / auraW) - 0.5;
-    const v = 0.5 - (py / auraH);
-
-    tmpLocal.set(
-      u * titlePlaneW,
-      v * titlePlaneH,
-      0.001
-    );
-
-    const wpos = tmpSpawn.copy(tmpLocal);
-    plane.localToWorld(wpos);
-
-    spawnTitleParticlesAt(wpos, 0.98);
   }
 }
 
@@ -1081,6 +1095,8 @@ function spawnCometTrail(worldPos, dt){
 }
 
 function updateCometIntro(t, dt){
+  if (!COMET_ENABLED) return;
+
   if (t >= INTRO_NO_MIDI_SECONDS){
     cometSprite.visible = false;
     cometMat.opacity = 0.0;
@@ -1221,7 +1237,6 @@ function tickHand(times, which, videoTime, midiTime){
 function tickHaptics(videoTime){
   if (rightTimes.length === 0 && leftTimes.length === 0) return;
 
-  // si el vídeo rebobinase (no debería), resync
   if (videoTime + 0.05 < lastVideoTimeForLoop){
     const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
     const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
@@ -1255,14 +1270,10 @@ renderer.setAnimationLoop(()=>{
 
   stepType(dt);
 
-  // ✅ partículas aleatorias durante el título
+  // (opcional) partículas suaves alrededor del título en 2–14s
   updateTitleParticles(t, dt);
 
-  // ✅ aura desde las letras del título
-  updateTitleAuraFromPixels(dt);
-
   tickHaptics(t);
-
   updateCometIntro(t, dt);
 
   frameEnergy *= Math.exp(-dt * 3.2);
@@ -1293,7 +1304,6 @@ async function enter(mode){
     updateHaptics(s);
   });
 
-  // ✅ cuando la sesión termine (por el vídeo o por el usuario), mostramos overlay
   s.addEventListener("end", () => {
     overlay.style.display = "grid";
   });
