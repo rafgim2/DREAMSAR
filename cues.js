@@ -7,7 +7,7 @@ export const CUES = [
   { t: 4.0, type: "title", text: ["Dream nº14"] },
 
   // ✅ TEXTO NORMAL
-  { t: 14.0, type: "text", text: [" ", " "] },
+  { t: 15.0, type: "text", text: [" ", " "] },
   { t: 23.0, type: "text", text: ["El día se despide sin hacer ruido,", "como si supiera que aún no es el final…"] },
   { t: 37.0, type: "text", text: ["La luz cae despacio sobre lo que fui,", "y nada duele pero todo pesa…"] },
   { t: 51.0, type: "text", text: ["Hay silencios que no piden respuesta,", "solo un lugar donde quedarse un momento…"] },
@@ -17,6 +17,7 @@ export const CUES = [
   { t: 125.0, type: "text", text: ["Cuando la noche lo cubre todo,", "ya no busco luz, busco sentido…"] },
   { t: 152.0, type: "text", text: ["Porque aceptar la oscuridad no es rendirse,", "es comprender que también forma parte de mí…"] },
 ];
+
 
 
 
