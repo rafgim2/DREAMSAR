@@ -32,9 +32,10 @@
     <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
     <p style="margin:0 0 14px 0;opacity:.9;">
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
-      Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
-      ✅ Título: halo + gradiente animado (dorado/naranja/marrón) como “luz que pasa”.
-      ✅ Fin: el vídeo NO hace loop; al terminar se cierra AR/VR automáticamente.
+      Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso atraído hacia el espectador.
+      ✅ Título con halo + gradiente animado (“luz que pasa”).
+      ✅ Textos NO desaparecen al entrar el siguiente: hacen fade out a los 10s.
+      ✅ Fin: vídeo sin loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -277,13 +278,59 @@ frameGroup.add(frameMesh);
 let frameEnergy = 0;
 let framePhase = 0;
 
-// ==================== TEXTO “ESCRITURA” (con TITLE) ====================
-const pad = 36;
-let canvas, ctx, texture, plane;
-let fullLines = [], fullWidths = [], fullText = "";
-let cursor = 0, nextT = 0;
-let prevVideoT = 0;
+// ==================== HELPERS COLOR/GRADIENTE ANIMADO ====================
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function rgb(r,g,b,a=1){ return `rgba(${r|0},${g|0},${b|0},${a})`; }
 
+function makeAnimatedTitleGradient(ctx, phase, w, h){
+  const ang = phase * 0.20;
+  const cx = w * 0.5, cy = h * 0.5;
+  const dx = Math.cos(ang) * w * 0.55;
+  const dy = Math.sin(ang) * h * 0.55;
+
+  const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+
+  // barrido ida/vuelta (luz que pasa)
+  const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
+  const band = 0.16;
+
+  const a0 = clamp(p - band*2.0, 0, 1);
+  const a1 = clamp(p - band*0.6, 0, 1);
+  const a2 = clamp(p,            0, 1);
+  const a3 = clamp(p + band*0.6, 0, 1);
+  const a4 = clamp(p + band*2.0, 0, 1);
+
+  const brown  = [120, 55, 20];
+  const orange = [255,140, 60];
+  const gold   = [255,214,100];
+  const hot2   = [255,245,235];
+
+  g.addColorStop(0.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a0,   rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a1,   rgb(orange[0], orange[1], orange[2], 0.98));
+  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   0.98));
+  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.98));
+  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.96));
+  g.addColorStop(1.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+
+  return g;
+}
+
+function makeAnimatedGlowColor(phase, alpha){
+  const t = 0.5 + 0.5*Math.sin(phase * 0.7);
+  const r = lerp(255, 255, t);
+  const g = lerp(140, 214, t);
+  const b = lerp( 60, 100, t);
+  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
+}
+
+// ==================== TEXTO “ESCRITURA” + FADE OUT ====================
+// ✅ Fade out: a los 10s empieza a desaparecer
+const TEXT_FADE_DELAY = 10.0; // segundos antes del fade
+const TEXT_FADE_DUR   = 1.4;  // duración del fade
+
+const pad = 36;
 const TEXT_Z = -1.25;
 const TEXT_Y_TEXT  = 1.65;
 const TEXT_Y_TITLE = 1.74;
@@ -295,14 +342,15 @@ let activeType = "text";
 let activeFontPx = 56;
 let activeLineH = 78;
 
-// ---- Glow 3D detrás del título ----
-let titleGlowMesh = null;
-let titleGlowTex = null;
+let cursor = 0, nextT = 0;
+let prevVideoT = 0;
 
-// “vida” del título (animación)
-let titleLifePhase = 0;
-let titleNeedRedraw = false;
-let titleLastDrawChars = 0;
+// En vez de 1 plano, guardamos varios objetos texto
+const textObjects = []; // {plane, mat, texture, canvas, ctx, fullLines, fullWidths, fullText, isTitle, createdAt, lifePhase, lastDrawChars, needRedraw, glowMesh}
+let activeObj = null;
+
+// Glow base texture compartida
+let titleGlowTex = null;
 
 function makeGlowTexture(){
   const c = document.createElement("canvas");
@@ -326,58 +374,6 @@ function makeGlowTexture(){
   return tex;
 }
 
-// ==================== HELPERS COLOR/GRADIENTE ANIMADO ====================
-function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
-function clamp01(x){ return clamp(x, 0, 1); }
-function lerp(a,b,t){ return a + (b-a)*t; }
-function rgb(r,g,b,a=1){ return `rgba(${r|0},${g|0},${b|0},${a})`; }
-
-// Gradiente animado “dorado-naranja-marrón” con banda luminosa que se desplaza
-function makeAnimatedTitleGradient(ctx, phase, w, h){
-  // Rotación MUY suave del eje del gradiente
-  const ang = phase * 0.20;
-  const cx = w * 0.5, cy = h * 0.5;
-  const dx = Math.cos(ang) * w * 0.55;
-  const dy = Math.sin(ang) * h * 0.55;
-
-  const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
-
-  // “luz que pasa”: barrido ida/vuelta (sin)
-  const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
-
-  const band = 0.16;
-  const a0 = clamp(p - band*2.0, 0, 1);
-  const a1 = clamp(p - band*0.6, 0, 1);
-  const a2 = clamp(p,            0, 1);
-  const a3 = clamp(p + band*0.6, 0, 1);
-  const a4 = clamp(p + band*2.0, 0, 1);
-
-  const brown  = [120, 55, 20];
-  const orange = [255,140, 60];
-  const gold   = [255,214,100];
-  const hot2   = [255,245,235];
-
-  g.addColorStop(0.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
-  g.addColorStop(a0,   rgb(brown[0],  brown[1],  brown[2],  0.95));
-  g.addColorStop(a1,   rgb(orange[0], orange[1], orange[2], 0.98));
-  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   0.98)); // pico brillante
-  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.98));
-  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.96));
-  g.addColorStop(1.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
-
-  return g;
-}
-
-// Glow (halo) también animado
-function makeAnimatedGlowColor(phase, alpha){
-  const t = 0.5 + 0.5*Math.sin(phase * 0.7);
-  const r = lerp(255, 255, t);
-  const g = lerp(140, 214, t);
-  const b = lerp( 60, 100, t);
-  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
-}
-
-// ==================== TEXTO SETUP/DRAW ====================
 function setupText(lines, type = "text"){
   activeType = type || "text";
   const isTitle = activeType === "title";
@@ -385,102 +381,99 @@ function setupText(lines, type = "text"){
   activeFontPx = isTitle ? 96 : 56;
   activeLineH  = isTitle ? 112 : 78;
 
-  fullLines = Array.isArray(lines) ? lines : [String(lines)];
+  const fullLines = Array.isArray(lines) ? lines : [String(lines)];
 
+  // medir
   const mctx = document.createElement("canvas").getContext("2d");
   mctx.font = `${activeFontPx}px ${fontName()}`;
-  fullWidths = fullLines.map(l => mctx.measureText(l).width);
+  const fullWidths = fullLines.map(l => mctx.measureText(l).width);
 
   const w = Math.ceil(Math.max(...fullWidths) + pad*2);
   const h = Math.ceil(fullLines.length * activeLineH + pad*2);
 
-  canvas = document.createElement("canvas");
+  const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
-  ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
-  texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
-
-  if (plane){
-    plane.material.dispose();
-    plane.geometry.dispose();
-    scene.remove(plane);
-  }
 
   const aspect = w / h;
   const physicalH = isTitle ? 0.36 : 0.30;
   const physicalW = physicalH * aspect;
 
-  plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(physicalW, physicalH),
-    new THREE.MeshBasicMaterial({ map: texture, transparent:true, depthWrite:false })
-  );
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    opacity: 1.0
+  });
 
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(physicalW, physicalH), mat);
   plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
   scene.add(plane);
 
-  // ---- Glow 3D detrás del título ----
+  // Glow 3D (por objeto título)
+  let glowMesh = null;
   if (isTitle){
     if (!titleGlowTex) titleGlowTex = makeGlowTexture();
 
-    if (!titleGlowMesh){
-      const gm = new THREE.MeshBasicMaterial({
-        map: titleGlowTex,
-        transparent: true,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.AdditiveBlending,
-        opacity: 1.0
-      });
+    const gm = new THREE.MeshBasicMaterial({
+      map: titleGlowTex,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 1.0
+    });
 
-      const gw = physicalW * 1.25;
-      const gh = physicalH * 1.55;
+    const gw = physicalW * 1.25;
+    const gh = physicalH * 1.55;
 
-      titleGlowMesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), gm);
-      titleGlowMesh.renderOrder = 998;
-      scene.add(titleGlowMesh);
-    } else {
-      const gw = physicalW * 1.25;
-      const gh = physicalH * 1.55;
-      titleGlowMesh.geometry.dispose();
-      titleGlowMesh.geometry = new THREE.PlaneGeometry(gw, gh);
-      titleGlowMesh.material.opacity = 1.0;
-      titleGlowMesh.visible = true;
-    }
-
-    titleGlowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
-    titleGlowMesh.quaternion.copy(plane.quaternion);
-
-    titleLifePhase = 0;
-    titleNeedRedraw = true;
-  } else {
-    if (titleGlowMesh) titleGlowMesh.visible = false;
+    glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), gm);
+    glowMesh.renderOrder = 998;
+    glowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
+    glowMesh.quaternion.copy(plane.quaternion);
+    scene.add(glowMesh);
   }
 
-  fullText = fullLines.join("\n");
+  const obj = {
+    plane, mat, texture, canvas, ctx,
+    fullLines, fullWidths,
+    fullText: fullLines.join("\n"),
+    isTitle,
+    createdAt: video.currentTime,
+    lifePhase: 0,
+    lastDrawChars: 0,
+    needRedraw: false,
+    glowMesh
+  };
+
+  textObjects.push(obj);
+
+  // este será el que “se escribe”
+  activeObj = obj;
   cursor = 0;
   nextT = 0;
-
-  titleLastDrawChars = 0;
-  draw(0);
+  drawObj(activeObj, 0);
 }
 
-function draw(chars){
-  if (!ctx) return;
+function drawObj(obj, chars){
+  if (!obj) return;
 
-  titleLastDrawChars = chars;
-  titleNeedRedraw = false;
+  obj.lastDrawChars = chars;
+  obj.needRedraw = false;
+
+  const { ctx, canvas, texture, fullLines, fullWidths, fullText, isTitle } = obj;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${activeFontPx}px ${fontName()}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  const isTitle = (activeType === "title");
-
-  function drawLineWithGlow(str, x, y){
+  function drawLine(str, x, y){
     if (!isTitle){
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.shadowColor = "rgba(0,0,0,0.85)";
@@ -489,11 +482,12 @@ function draw(chars){
       return;
     }
 
-    const pulse = 0.5 + 0.5*Math.sin(titleLifePhase * 2.0);
+    const phase = obj.lifePhase;
+    const pulse = 0.5 + 0.5*Math.sin(phase * 2.0);
     const glowBoost = 0.95 + 0.35*pulse;
 
-    const glowBig = makeAnimatedGlowColor(titleLifePhase, 0.28);
-    const glowMid = makeAnimatedGlowColor(titleLifePhase, 0.55);
+    const glowBig = makeAnimatedGlowColor(phase, 0.28);
+    const glowMid = makeAnimatedGlowColor(phase, 0.55);
 
     // halo grande
     ctx.save();
@@ -521,14 +515,14 @@ function draw(chars){
 
     // relleno con gradiente animado (“luz que pasa”)
     ctx.save();
-    const grad = makeAnimatedTitleGradient(ctx, titleLifePhase, canvas.width, canvas.height);
+    const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
     ctx.fillStyle = grad;
     ctx.shadowColor = "rgba(0,0,0,0.35)";
     ctx.shadowBlur = 6;
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // núcleo (extra de brillo)
+    // núcleo extra
     ctx.save();
     ctx.globalAlpha = 0.18 + 0.16*pulse;
     ctx.fillStyle = "rgba(255,245,235,1.0)";
@@ -553,7 +547,7 @@ function draw(chars){
     ctx.rect(left, y - activeLineH/2, vw, activeLineH);
     ctx.clip();
 
-    drawLineWithGlow(full, cx, y);
+    drawLine(full, cx, y);
 
     ctx.restore();
     y += activeLineH;
@@ -563,39 +557,84 @@ function draw(chars){
 }
 
 function randomCps(){ return TYPE_CPS_MIN + Math.random() * (TYPE_CPS_MAX - TYPE_CPS_MIN); }
+
 function stepType(dt){
+  if (!activeObj) return;
+  const fullText = activeObj.fullText;
   if (!fullText || cursor >= fullText.length) return;
+
   nextT -= dt;
   while (nextT <= 0 && cursor < fullText.length){
     cursor++;
-    draw(cursor);
+    drawObj(activeObj, cursor);
     nextT += 1 / randomCps();
   }
 }
 
-// redibuja el título aunque el typing haya terminado (para animar gradiente/halo)
-function updateTitleLife(dt){
-  if (activeType !== "title") return;
-
-  titleLifePhase += dt;
-
-  // Redraw a ~24 fps (equilibrio calidad/coste)
+// anima el “título” (gradiente/halo) aunque ya haya terminado de escribirse
+function updateTitleLives(dt){
   const FPS = 24;
-  if (Math.floor(titleLifePhase * FPS) !== Math.floor((titleLifePhase - dt) * FPS)){
-    titleNeedRedraw = true;
+
+  for (const o of textObjects){
+    if (!o.isTitle) continue;
+
+    const prev = o.lifePhase;
+    o.lifePhase += dt;
+
+    // respirar glow 3D por objeto
+    if (o.glowMesh){
+      const pulse = 0.5 + 0.5*Math.sin(o.lifePhase * 2.0);
+      // el fade global del texto lo controla updateTextFadeAndCleanup, aquí solo modulamos
+      o.glowMesh.material.opacity = o.mat.opacity * (0.78 + 0.30*pulse);
+
+      const s = 1.0 + 0.02*pulse;
+      o.glowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
+    }
+
+    // redraw a ~24fps para que “se mueva” el gradiente
+    if (Math.floor(o.lifePhase * FPS) !== Math.floor(prev * FPS)){
+      drawObj(o, o.lastDrawChars);
+    }
   }
+}
 
-  // panel glow 3D: respira y cambia sutilmente
-  if (titleGlowMesh){
-    const pulse = 0.5 + 0.5*Math.sin(titleLifePhase * 2.0);
-    titleGlowMesh.material.opacity = 0.78 + 0.30*pulse;
+function updateTextFadeAndCleanup(t){
+  for (let i = textObjects.length - 1; i >= 0; i--){
+    const o = textObjects[i];
+    const age = t - o.createdAt;
 
-    const s = 1.0 + 0.02*pulse;
-    titleGlowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
-  }
+    let op = 1.0;
+    if (age > TEXT_FADE_DELAY){
+      const k = (age - TEXT_FADE_DELAY) / TEXT_FADE_DUR;
+      op = 1.0 - clamp(k, 0, 1);
+    }
 
-  if (titleNeedRedraw){
-    draw(titleLastDrawChars);
+    o.mat.opacity = op;
+    o.plane.visible = op > 0.001;
+
+    if (o.glowMesh){
+      o.glowMesh.visible = op > 0.001;
+      // la opacidad final del glow se ajusta en updateTitleLives (multiplicada por mat.opacity)
+      // aquí solo aseguramos que no se quede “encendido” al 0
+      if (op <= 0.001) o.glowMesh.material.opacity = 0.0;
+    }
+
+    // limpieza al acabar el fade
+    if (age > TEXT_FADE_DELAY + TEXT_FADE_DUR + 0.15){
+      scene.remove(o.plane);
+      o.plane.geometry.dispose();
+      o.mat.dispose();
+      o.texture.dispose();
+
+      if (o.glowMesh){
+        scene.remove(o.glowMesh);
+        o.glowMesh.geometry.dispose();
+        o.glowMesh.material.dispose();
+      }
+
+      textObjects.splice(i, 1);
+      if (activeObj === o) activeObj = null;
+    }
   }
 }
 
@@ -673,20 +712,16 @@ const VIEWER_Z_FAR  = 1.35;
 const VIEWER_X_MAX  = 0.75;
 const VIEWER_Y_MAX  = 0.45;
 
-// ==================== (opcional) PARTÍCULAS SUAVES ZONA TÍTULO 2–14s ====================
-// Si no quieres nada alrededor del título, pon TITLE_PARTICLE_RATE = 0.
+// (opcional) partículas suaves cerca del título 2–14s (si no quieres: pon RATE=0)
 const TITLE_PARTICLES_START = 2.0;
 const TITLE_PARTICLES_END   = 14.0;
-
 const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
-
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.25;
 const TITLE_X_MAX  = 0.42;
 const TITLE_Y_MAX  = 0.22;
-
 let titleAcc = 0;
 
 // ==================== COMETA INTRO (0–14s) ====================
@@ -732,7 +767,6 @@ const maxLife   = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
 const attractMul = new Float32Array(MAX_PARTICLES);
-
 const targetX = new Float32Array(MAX_PARTICLES);
 const targetY = new Float32Array(MAX_PARTICLES);
 const targetZ = new Float32Array(MAX_PARTICLES);
@@ -746,12 +780,8 @@ for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
   maxLife[i] = P_LIFE;
   attractMul[i] = 1.0;
-  positions[i*3+0] = 0;
   positions[i*3+1] = -999;
-  positions[i*3+2] = 0;
-  colors[i*3+0]=1; colors[i*3+1]=1; colors[i*3+2]=1;
   alphas[i]=0;
-  targetX[i]=0; targetY[i]=0; targetZ[i]=0;
 }
 
 const pMat = new THREE.ShaderMaterial({
@@ -797,7 +827,7 @@ points.frustumCulled = false;
 points.renderOrder = 999;
 scene.add(points);
 
-// ==================== SPRITE COMETA ====================
+// sprite cometa
 const cometMat = new THREE.SpriteMaterial({
   map: spriteTex,
   transparent: true,
@@ -811,18 +841,16 @@ cometSprite.visible = false;
 cometSprite.renderOrder = 1000;
 scene.add(cometSprite);
 
-// ==================== TEMP VECTORS ====================
+// temp vectors
 let pCursor = 0;
 const tmpSpawn = new THREE.Vector3();
 const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
-
 const tmpCamDir   = new THREE.Vector3();
 const tmpCamUp    = new THREE.Vector3();
 const tmpCamRight = new THREE.Vector3();
 const tmpViewerPos = new THREE.Vector3();
-
 const tmpViewerEnd = new THREE.Vector3();
 const tmpLocal = new THREE.Vector3();
 
@@ -832,16 +860,12 @@ const cometPos = new THREE.Vector3();
 const cometPrev = new THREE.Vector3();
 const cometDir  = new THREE.Vector3();
 
-// ==================== UTILIDADES ====================
+// util
 function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
 function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
+function smoothstep01(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
 
-function smoothstep01(x){
-  x = Math.max(0, Math.min(1, x));
-  return x*x*(3 - 2*x);
-}
-
-// ==================== SPAWN PRINCIPAL (MIDI) ====================
+// spawn midi particles
 function spawnParticlesFrom(worldPos, warm, isRightSide){
   const t = pickTarget(isRightSide);
 
@@ -892,7 +916,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== SPAWN “LIBRE” PARA ZONA TÍTULO (NO DESDE TEXTO) ====================
+// spawn title-area particles (opcional)
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
@@ -902,7 +926,6 @@ function spawnTitleParticlesAt(worldPos, warm){
 
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
-
     attractMul[i] = 0.0;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.05;
@@ -913,13 +936,9 @@ function spawnTitleParticlesAt(worldPos, warm){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    let vx = (Math.random()-0.5)*0.045;
-    let vy = 0.20 + Math.random()*0.10;
-    let vz = (Math.random()-0.5)*0.045;
-
-    velocity[i*3+0] = vx;
-    velocity[i*3+1] = vy;
-    velocity[i*3+2] = vz;
+    velocity[i*3+0] = (Math.random()-0.5)*0.045;
+    velocity[i*3+1] = 0.20 + Math.random()*0.10;
+    velocity[i*3+2] = (Math.random()-0.5)*0.045;
 
     targetX[i] = sx;
     targetY[i] = sy + 0.8;
@@ -938,7 +957,6 @@ function spawnTitleParticlesAt(worldPos, warm){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== UPDATE PARTÍCULAS ====================
 function updateParticles(dt){
   for (let i=0;i<MAX_PARTICLES;i++){
     if (alive[i] <= 0) continue;
@@ -982,7 +1000,6 @@ function updateParticles(dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ==================== VIEWER POS ====================
 function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
   const camPos = camera.getWorldPosition(tmpPos);
   camera.getWorldDirection(tmpCamDir).normalize();
@@ -1011,17 +1028,14 @@ function spawnLeftViewerParticles(){
   }
 }
 
-// ==================== PARTÍCULAS ALEATORIAS (2–14s) ZONA TÍTULO (opcional) ====================
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
 
-  const isTitleActive = (activeType === "title");
-
-  const zNear = isTitleActive ? 0.75 : TITLE_Z_NEAR;
-  const zFar  = isTitleActive ? 1.20 : TITLE_Z_FAR;
-  const xMax  = isTitleActive ? 0.34 : TITLE_X_MAX;
-  const yMax  = isTitleActive ? 0.16 : TITLE_Y_MAX;
+  const zNear = TITLE_Z_NEAR;
+  const zFar  = TITLE_Z_FAR;
+  const xMax  = TITLE_X_MAX;
+  const yMax  = TITLE_Y_MAX;
 
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
@@ -1348,6 +1362,7 @@ renderer.setAnimationLoop(()=>{
 
   const t = video.currentTime;
 
+  // cues
   while (nextCue < cues.length && t >= cues[nextCue].t){
     setupText(cues[nextCue].text, cues[nextCue].type || "text");
     nextCue++;
@@ -1357,9 +1372,16 @@ renderer.setAnimationLoop(()=>{
   prevVideoT = t;
 
   stepType(dt);
-  updateTitleLife(dt);     // ✅ anima gradiente del título
 
-  updateTitleParticles(t, dt); // opcional
+  // ✅ anima gradiente/halo de TODOS los títulos visibles
+  updateTitleLives(dt);
+
+  // ✅ fade out de TODOS los textos a los 10s + limpieza
+  updateTextFadeAndCleanup(t);
+
+  // opcional: partículas suaves por zona título
+  updateTitleParticles(t, dt);
+
   tickHaptics(t);
   updateCometIntro(t, dt);
 
