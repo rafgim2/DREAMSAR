@@ -34,6 +34,8 @@
       Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
       Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso que es atraído claramente hacia el espectador.
       Título (2–14s): partículas aleatorias suaves alrededor del título.
+      ✅ Aura: partículas nacen desde los trazos reales del título.
+      ✅ Fin: el vídeo NO hace loop; al terminar se cierra AR/VR automáticamente.
     </p>
 
     <button id="start">▶ Iniciar vídeo</button>
@@ -103,7 +105,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.2));
 const video = document.createElement("video");
 video.src = VIDEO_URL;
 video.crossOrigin = "anonymous";
-video.loop = true;
+video.loop = false; // ✅ NO LOOP
 video.preload = "auto";
 video.playsInline = true;
 video.setAttribute("playsinline","");
@@ -120,6 +122,18 @@ document.body.appendChild(video);
 video.addEventListener("error", () => {
   const e = video.error;
   log("❌ Error video: " + (e ? (e.code + " " + e.message) : "desconocido"));
+});
+
+// ✅ Al terminar: salir de AR/VR automáticamente
+video.addEventListener("ended", async () => {
+  log("⏹ Vídeo finalizado → saliendo de la experiencia");
+  const s = renderer.xr.getSession?.();
+  if (s){
+    try{ await s.end(); }catch{}
+  }
+  overlay.style.display = "grid";
+  btnAR.disabled = true;
+  btnVR.disabled = true;
 });
 
 const videoTex = new THREE.VideoTexture(video);
@@ -271,7 +285,7 @@ let prevVideoT = 0;
 
 const TEXT_Z = -1.25;
 const TEXT_Y_TEXT  = 1.65;
-const TEXT_Y_TITLE = 1.74;   // ✅ título más bajo (antes 1.82)
+const TEXT_Y_TITLE = 1.74;
 
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
@@ -279,6 +293,22 @@ const TYPE_CPS_MAX = 14;
 let activeType = "text";
 let activeFontPx = 56;
 let activeLineH = 78;
+
+// ==================== AURA PARTÍCULAS DEL TÍTULO (desde píxeles del texto) ====================
+let auraCanvas = null;
+let auraCtx = null;
+let auraImageData = null;
+let auraW = 220;
+let auraH = 110;
+
+let titlePlaneW = 0;
+let titlePlaneH = 0;
+
+let auraAcc = 0;
+let auraSampleAcc = 0;
+const AURA_SPAWN_RATE = 65;
+const AURA_REFRESH_HZ = 12;
+const AURA_ALPHA_TH = 25;
 
 function setupText(lines, type = "text"){
   activeType = type || "text";
@@ -315,6 +345,19 @@ function setupText(lines, type = "text"){
   const physicalH = isTitle ? 0.36 : 0.30;
   const physicalW = physicalH * aspect;
 
+  // Guardamos tamaño físico del plano del título para el aura
+  if (isTitle) {
+    titlePlaneW = physicalW;
+    titlePlaneH = physicalH;
+
+    if (!auraCanvas) {
+      auraCanvas = document.createElement("canvas");
+      auraCanvas.width = auraW;
+      auraCanvas.height = auraH;
+      auraCtx = auraCanvas.getContext("2d", { willReadFrequently: true });
+    }
+  }
+
   plane = new THREE.Mesh(
     new THREE.PlaneGeometry(physicalW, physicalH),
     new THREE.MeshBasicMaterial({ map: texture, transparent:true, depthWrite:false })
@@ -335,8 +378,8 @@ function draw(chars){
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${activeFontPx}px ${fontName()}`;
   ctx.fillStyle = (activeType === "title")
-  ? "rgba(180, 100, 40, 0.98)"   // color del TÍTULO
-  : "rgba(255,255,255,0.96)"; // color del TEXTO normal
+    ? "rgba(180, 100, 40, 0.98)"
+    : "rgba(255,255,255,0.96)";
   ctx.shadowColor = "rgba(0,0,0,0.85)";
   ctx.shadowBlur = 20;
   ctx.textAlign = "center";
@@ -361,6 +404,33 @@ function draw(chars){
 
     y += activeLineH;
   }
+
+  // ---- Aura mask: dibujamos el título en un canvas pequeño para muestrear píxeles ----
+  if (activeType === "title" && auraCtx) {
+    auraCtx.clearRect(0, 0, auraW, auraH);
+    auraCtx.save();
+    auraCtx.translate(auraW / 2, auraH / 2);
+
+    const scale = 0.85;
+    auraCtx.scale(scale, scale);
+    auraCtx.font = `${Math.floor(activeFontPx * 0.9)}px ${fontName()}`;
+    auraCtx.fillStyle = "rgba(255,255,255,1)";
+    auraCtx.textAlign = "center";
+    auraCtx.textBaseline = "middle";
+
+    const visLines = fullText.slice(0, chars).split("\n");
+
+    let yy = -((fullLines.length - 1) * 0.5) * (activeLineH * 0.38);
+    for (let i = 0; i < fullLines.length; i++) {
+      const vis = visLines[i] || "";
+      auraCtx.fillText(vis, 0, yy);
+      yy += (activeLineH * 0.38);
+    }
+
+    auraCtx.restore();
+    auraImageData = null;
+  }
+
   texture.needsUpdate = true;
 }
 
@@ -458,11 +528,10 @@ const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
 
-// ✅ más concentradas en zona título
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.25;
-const TITLE_X_MAX  = 0.42;  // antes 0.70
-const TITLE_Y_MAX  = 0.22;  // antes 0.40
+const TITLE_X_MAX  = 0.42;
+const TITLE_Y_MAX  = 0.22;
 
 let titleAcc = 0;
 
@@ -508,7 +577,6 @@ const alive     = new Float32Array(MAX_PARTICLES);
 const maxLife   = new Float32Array(MAX_PARTICLES);
 const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-// multiplicador de atracción por partícula (1 normal, cometa más fuerte, 0 = libre)
 const attractMul = new Float32Array(MAX_PARTICLES);
 
 const targetX = new Float32Array(MAX_PARTICLES);
@@ -681,7 +749,7 @@ function spawnTitleParticlesAt(worldPos, warm){
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
 
-    attractMul[i] = 0.0; // libre
+    attractMul[i] = 0.0;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.05;
     const sy = worldPos.y + (Math.random()-0.5)*0.05;
@@ -703,7 +771,6 @@ function spawnTitleParticlesAt(worldPos, warm){
     targetY[i] = sy + 0.8;
     targetZ[i] = sz;
 
-    // ✅ más dorado: menos azul, verde algo más bajo
     const b = 0.75 + warm*0.25;
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.55 + 0.20*Math.random()) * b;
@@ -796,11 +863,10 @@ function updateTitleParticles(t, dt){
 
   const isTitleActive = (activeType === "title");
 
-  // ✅ aún más concentradas cuando está activo el título
   const zNear = isTitleActive ? 0.75 : TITLE_Z_NEAR;
   const zFar  = isTitleActive ? 1.20 : TITLE_Z_FAR;
-  const xMax  = isTitleActive ? 0.34 : TITLE_X_MAX; // antes 0.38/0.55
-  const yMax  = isTitleActive ? 0.16 : TITLE_Y_MAX; // antes 0.18/0.32
+  const xMax  = isTitleActive ? 0.34 : TITLE_X_MAX;
+  const yMax  = isTitleActive ? 0.16 : TITLE_Y_MAX;
 
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
@@ -810,6 +876,59 @@ function updateTitleParticles(t, dt){
   for (let i=0;i<n;i++){
     randomViewerWorldPos(tmpViewerPos, zNear, zFar, xMax, yMax);
     spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
+  }
+}
+
+// ==================== AURA DEL TÍTULO (desde píxeles del texto) ====================
+function updateTitleAuraFromPixels(dt){
+  if (activeType !== "title") return;
+  if (!plane || !auraCtx) return;
+
+  auraSampleAcc += dt * AURA_REFRESH_HZ;
+  if (auraSampleAcc >= 1.0) {
+    auraSampleAcc -= 1.0;
+    try {
+      auraImageData = auraCtx.getImageData(0, 0, auraW, auraH);
+    } catch {
+      auraImageData = null;
+    }
+  }
+  if (!auraImageData) return;
+
+  auraAcc += dt * AURA_SPAWN_RATE;
+  const n = Math.floor(auraAcc);
+  if (n <= 0) return;
+  auraAcc -= n;
+
+  const data = auraImageData.data;
+
+  for (let k=0; k<n; k++){
+    let px = 0, py = 0, ok = false;
+
+    for (let tries=0; tries<14; tries++){
+      px = (Math.random() * auraW) | 0;
+      py = (Math.random() * auraH) | 0;
+      const idx = (py * auraW + px) * 4 + 3;
+      if (data[idx] > AURA_ALPHA_TH){
+        ok = true;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    const u = (px / auraW) - 0.5;
+    const v = 0.5 - (py / auraH);
+
+    tmpLocal.set(
+      u * titlePlaneW,
+      v * titlePlaneH,
+      0.001
+    );
+
+    const wpos = tmpSpawn.copy(tmpLocal);
+    plane.localToWorld(wpos);
+
+    spawnTitleParticlesAt(wpos, 0.98);
   }
 }
 
@@ -1102,6 +1221,7 @@ function tickHand(times, which, videoTime, midiTime){
 function tickHaptics(videoTime){
   if (rightTimes.length === 0 && leftTimes.length === 0) return;
 
+  // si el vídeo rebobinase (no debería), resync
   if (videoTime + 0.05 < lastVideoTimeForLoop){
     const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
     const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
@@ -1138,6 +1258,9 @@ renderer.setAnimationLoop(()=>{
   // ✅ partículas aleatorias durante el título
   updateTitleParticles(t, dt);
 
+  // ✅ aura desde las letras del título
+  updateTitleAuraFromPixels(dt);
+
   tickHaptics(t);
 
   updateCometIntro(t, dt);
@@ -1168,6 +1291,11 @@ async function enter(mode){
   s.addEventListener("inputsourceschange", () => {
     mapGrips(s);
     updateHaptics(s);
+  });
+
+  // ✅ cuando la sesión termine (por el vídeo o por el usuario), mostramos overlay
+  s.addEventListener("end", () => {
+    overlay.style.display = "grid";
   });
 
   overlay.style.display = "none";
@@ -1236,11 +1364,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
