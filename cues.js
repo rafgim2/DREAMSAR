@@ -4,7 +4,7 @@ export const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/dr
 // Cues (incluye título con type:"title")
 export const CUES = [
   // ✅ TÍTULO (ajusta el tiempo a cuando quieras que aparezca)
-  { t: 16.0, type: "title", text: ["DREAM 14"] },
+  { t: 2.0, type: "title", text: ["Dream nº14"] },
 
   // ✅ TEXTO NORMAL
   { t: 23.0, type: "text", text: ["El día se despide sin hacer ruido,", "como si supiera que aún no es el final…"] },
@@ -16,15 +16,3 @@ export const CUES = [
   { t: 125.0, type: "text", text: ["Cuando la noche lo cubre todo,", "ya no busco luz, busco sentido…"] },
   { t: 152.0, type: "text", text: ["Porque aceptar la oscuridad no es rendirse,", "es comprender que también forma parte de mí…"] },
 ];
-
-
-
-
-
-
-
-
-
-
-
-
