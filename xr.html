@@ -705,7 +705,6 @@ const TITLE_Z_FAR  = 1.25;
 const TITLE_X_MAX  = 0.42;
 const TITLE_Y_MAX  = 0.22;
 
-// ✅ objetivo más cerca del espectador (para que vayan “hacia ti”)
 const TITLE_TO_VIEWER_Z_NEAR = 0.18;
 const TITLE_TO_VIEWER_Z_FAR  = 0.40;
 const TITLE_TO_VIEWER_X_MAX  = 0.18;
@@ -776,16 +775,47 @@ for (let i=0;i<MAX_PARTICLES;i++){
 }
 
 /* ============================================================
-   ✅ FIX: en móvil (fallback NO XR) los puntos se ven pequeños.
-   Solución:
-   - Tamaño base mayor cuando NO estás en XR.
-   - Además, un clamp mínimo de gl_PointSize.
-   Esto hace que móvil se parezca más a Quest.
+   ✅ FIX XR móvil:
+   - En "immersive-ar" de móvil, uSize=22 (Quest) es ENANO.
+   - Detectamos si la sesión tiene mandos (tracked-pointer+gamepad):
+       * si NO → móvil AR → tamaño grande
+       * si SÍ → headset → tamaño normal
    ============================================================ */
 const isProbablyMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const POINT_SIZE_XR = 22.0;
-const POINT_SIZE_FLAT_MOBILE = 44.0;   // 👈 sube bastante en móvil
-const POINT_SIZE_FLAT_DESKTOP = 28.0;  // 👈 un poco más que XR
+
+// calibres
+const POINT_SIZE_XR_HEADSET = 22.0;     // Quest / visor
+const POINT_SIZE_XR_MOBILE  = 64.0;     // 👈 móvil en XR (AR handheld)
+const POINT_SIZE_FLAT_MOBILE = 44.0;    // móvil sin XR (te iba bien)
+const POINT_SIZE_FLAT_DESKTOP = 28.0;
+
+function xrLooksLikeHeadset(session){
+  if (!session) return false;
+
+  // Si hay tracked-pointer con gamepad, casi seguro es visor con mandos (Quest)
+  for (const src of session.inputSources){
+    if (src?.targetRayMode === "tracked-pointer" && src?.gamepad) return true;
+  }
+  return false;
+}
+
+function applyParticlePointSize(session = null){
+  const presenting = renderer.xr.isPresenting === true;
+
+  if (!presenting){
+    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_FLAT_MOBILE : POINT_SIZE_FLAT_DESKTOP;
+    return;
+  }
+
+  // Estamos en XR:
+  const headset = xrLooksLikeHeadset(session ?? renderer.xr.getSession?.());
+  if (headset){
+    pMat.uniforms.uSize.value = POINT_SIZE_XR_HEADSET;
+  } else {
+    // XR en móvil (AR handheld) → agranda fuerte
+    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_XR_MOBILE : POINT_SIZE_XR_HEADSET;
+  }
+}
 
 const pMat = new THREE.ShaderMaterial({
   transparent: true,
@@ -794,7 +824,7 @@ const pMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending,
   uniforms: {
     uMap: { value: spriteTex },
-    uSize: { value: POINT_SIZE_XR }
+    uSize: { value: POINT_SIZE_XR_HEADSET }
   },
   vertexShader: `
     attribute vec3 color;
@@ -810,9 +840,9 @@ const pMat = new THREE.ShaderMaterial({
 
       float dist = -mvPosition.z;
 
-      // tamaño ~ 1/dist como antes, pero con mínimo para evitar "micro-partículas"
+      // tamaño ~ 1/dist, pero con mínimo (para evitar micro en XR)
       float s = uSize * (1.0 / max(0.18, dist));
-      gl_PointSize = max(2.0, s);
+      gl_PointSize = max(3.0, s);
     }
   `,
   fragmentShader: `
@@ -828,15 +858,6 @@ const pMat = new THREE.ShaderMaterial({
     }
   `
 });
-
-function applyParticlePointSize(){
-  const presenting = renderer.xr.isPresenting === true;
-  if (presenting){
-    pMat.uniforms.uSize.value = POINT_SIZE_XR;
-  } else {
-    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_FLAT_MOBILE : POINT_SIZE_FLAT_DESKTOP;
-  }
-}
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -961,6 +982,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+// spawn title particles
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
@@ -1083,7 +1105,7 @@ function updateTitleParticles(t, dt){
   }
 }
 
-// ==================== COMETA: PERÍMETRO REDONONDEADO REAL ====================
+// ==================== COMETA: PERÍMETRO REDONDEADO REAL ====================
 function roundedRectPerimeterPoint(u, outWorld){
   u = ((u % 1) + 1) % 1;
 
@@ -1434,8 +1456,8 @@ async function enter(mode){
   });
   renderer.xr.setSession(s);
 
-  // ✅ en XR tamaño original (como Quest)
-  applyParticlePointSize();
+  // ✅ aplica tamaño correcto según tipo de XR (móvil vs visor)
+  applyParticlePointSize(s);
 
   mapGrips(s);
   updateHaptics(s);
@@ -1443,12 +1465,14 @@ async function enter(mode){
   s.addEventListener("inputsourceschange", () => {
     mapGrips(s);
     updateHaptics(s);
+
+    // ✅ re-evalúa: algunos móviles cambian inputSources tarde
+    applyParticlePointSize(s);
   });
 
   s.addEventListener("end", () => {
     overlay.style.display = "grid";
-    // ✅ al salir de XR (volver a móvil/flat) agrandamos puntos
-    applyParticlePointSize();
+    applyParticlePointSize(null);
   });
 
   overlay.style.display = "none";
@@ -1459,8 +1483,8 @@ btnStart.onclick = async () => {
     loadPristinaFontNonBlocking();
     drawGradient(0, 0);
 
-    // ✅ en modo NO XR (móvil) agrandamos partículas ya desde el inicio
-    applyParticlePointSize();
+    // en modo plano
+    applyParticlePointSize(null);
 
     video.muted = false;
     video.volume = 1.0;
@@ -1515,8 +1539,8 @@ window.addEventListener("resize", ()=>{
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 
-  // ✅ por si cambia orientación (móvil), reaplicamos tamaño
-  applyParticlePointSize();
+  // si rota el móvil en XR/plano
+  applyParticlePointSize(renderer.xr.getSession?.() ?? null);
 });
 
 log("✅ App cargada. Pulsa “Iniciar vídeo”.");
