@@ -292,7 +292,6 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
 
   const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
 
-  // barrido ida/vuelta (luz que pasa)
   const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
   const band = 0.16;
 
@@ -327,8 +326,8 @@ function makeAnimatedGlowColor(phase, alpha){
 }
 
 // ==================== TEXTO “ESCRITURA” + FADE OUT ====================
-const TEXT_FADE_DELAY = 10.0; // segundos antes del fade
-const TEXT_FADE_DUR   = 1.4;  // duración del fade
+const TEXT_FADE_DELAY = 10.0;
+const TEXT_FADE_DUR   = 1.4;
 
 const pad = 36;
 const TEXT_Z = -1.25;
@@ -482,7 +481,6 @@ function drawObj(obj, chars){
     const glowBig = makeAnimatedGlowColor(phase, 0.28);
     const glowMid = makeAnimatedGlowColor(phase, 0.55);
 
-    // halo grande
     ctx.save();
     ctx.fillStyle = glowBig;
     ctx.shadowColor = glowBig;
@@ -490,7 +488,6 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // halo medio
     ctx.save();
     ctx.fillStyle = glowMid;
     ctx.shadowColor = glowMid;
@@ -498,7 +495,6 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // contorno sutil
     ctx.save();
     ctx.lineWidth = Math.max(2, activeFontPx * 0.06);
     ctx.strokeStyle = "rgba(120, 55, 20, 0.25)";
@@ -506,7 +502,6 @@ function drawObj(obj, chars){
     ctx.strokeText(str, x, y);
     ctx.restore();
 
-    // relleno con gradiente animado (“luz que pasa”)
     ctx.save();
     const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
     ctx.fillStyle = grad;
@@ -515,7 +510,6 @@ function drawObj(obj, chars){
     ctx.fillText(str, x, y);
     ctx.restore();
 
-    // núcleo extra (ajustado por ti a 0.06 para evitar “quemado”)
     ctx.save();
     ctx.globalAlpha = 0.06;
     ctx.fillStyle = "rgba(255,245,235,1.0)";
@@ -706,19 +700,18 @@ const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
 
-// zona (spawn) cerca de donde miras / cerca del título
 const TITLE_Z_NEAR = 0.75;
 const TITLE_Z_FAR  = 1.25;
 const TITLE_X_MAX  = 0.42;
 const TITLE_Y_MAX  = 0.22;
 
-// ✅ NUEVO: objetivo más cerca del espectador (para que vayan “hacia ti”)
+// ✅ objetivo más cerca del espectador (para que vayan “hacia ti”)
 const TITLE_TO_VIEWER_Z_NEAR = 0.18;
 const TITLE_TO_VIEWER_Z_FAR  = 0.40;
 const TITLE_TO_VIEWER_X_MAX  = 0.18;
 const TITLE_TO_VIEWER_Y_MAX  = 0.10;
-const TITLE_TO_VIEWER_ATTR_MUL = 2.6;   // fuerza de atracción
-const TITLE_TO_VIEWER_PUSH = 0.18;      // empuje inicial hacia el espectador
+const TITLE_TO_VIEWER_ATTR_MUL = 2.6;
+const TITLE_TO_VIEWER_PUSH = 0.18;
 
 let titleAcc = 0;
 
@@ -782,6 +775,18 @@ for (let i=0;i<MAX_PARTICLES;i++){
   alphas[i]=0;
 }
 
+/* ============================================================
+   ✅ FIX: en móvil (fallback NO XR) los puntos se ven pequeños.
+   Solución:
+   - Tamaño base mayor cuando NO estás en XR.
+   - Además, un clamp mínimo de gl_PointSize.
+   Esto hace que móvil se parezca más a Quest.
+   ============================================================ */
+const isProbablyMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const POINT_SIZE_XR = 22.0;
+const POINT_SIZE_FLAT_MOBILE = 44.0;   // 👈 sube bastante en móvil
+const POINT_SIZE_FLAT_DESKTOP = 28.0;  // 👈 un poco más que XR
+
 const pMat = new THREE.ShaderMaterial({
   transparent: true,
   depthWrite: false,
@@ -789,7 +794,7 @@ const pMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending,
   uniforms: {
     uMap: { value: spriteTex },
-    uSize: { value: 22.0 }
+    uSize: { value: POINT_SIZE_XR }
   },
   vertexShader: `
     attribute vec3 color;
@@ -802,8 +807,12 @@ const pMat = new THREE.ShaderMaterial({
       vAlpha = aAlpha;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mvPosition;
+
       float dist = -mvPosition.z;
-      gl_PointSize = uSize * (1.0 / max(0.2, dist));
+
+      // tamaño ~ 1/dist como antes, pero con mínimo para evitar "micro-partículas"
+      float s = uSize * (1.0 / max(0.18, dist));
+      gl_PointSize = max(2.0, s);
     }
   `,
   fragmentShader: `
@@ -819,6 +828,15 @@ const pMat = new THREE.ShaderMaterial({
     }
   `
 });
+
+function applyParticlePointSize(){
+  const presenting = renderer.xr.isPresenting === true;
+  if (presenting){
+    pMat.uniforms.uSize.value = POINT_SIZE_XR;
+  } else {
+    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_FLAT_MOBILE : POINT_SIZE_FLAT_DESKTOP;
+  }
+}
 
 const points = new THREE.Points(pGeom, pMat);
 points.frustumCulled = false;
@@ -882,7 +900,6 @@ function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
   return out;
 }
 
-// ✅ objetivo cerca del espectador (para partículas del título)
 function randomNearViewerTarget(out){
   return randomViewerWorldPos(
     out,
@@ -944,7 +961,6 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
-// ✅ spawn title-area particles: ahora VAN HACIA EL ESPECTADOR
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
 
@@ -954,8 +970,6 @@ function spawnTitleParticlesAt(worldPos, warm){
 
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
-
-    // ✅ antes: 0.0 libre. Ahora: atracción hacia un target cerca del espectador
     attractMul[i] = TITLE_TO_VIEWER_ATTR_MUL;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.05;
@@ -966,18 +980,15 @@ function spawnTitleParticlesAt(worldPos, warm){
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    // target cerca del espectador
     randomNearViewerTarget(tmpTarget);
     targetX[i] = tmpTarget.x;
     targetY[i] = tmpTarget.y;
     targetZ[i] = tmpTarget.z;
 
-    // velocidad base suave
     let vx = (Math.random()-0.5)*0.030;
     let vy = (Math.random()-0.5)*0.030;
     let vz = (Math.random()-0.5)*0.030;
 
-    // ✅ empuje inicial hacia el target (hacia el espectador)
     tmpDir.copy(tmpTarget).sub(tmpSpawn.set(sx,sy,sz));
     const d = tmpDir.length();
     if (d > 0.0001){
@@ -1057,7 +1068,6 @@ function spawnLeftViewerParticles(){
   }
 }
 
-// ==================== PARTÍCULAS ALEATORIAS DEL TÍTULO (2–14s) ====================
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
@@ -1068,13 +1078,12 @@ function updateTitleParticles(t, dt){
   titleAcc -= n;
 
   for (let i=0;i<n;i++){
-    // spawn en una caja “cerca de donde miras” (suele coincidir con zona título)
     randomViewerWorldPos(tmpViewerPos, TITLE_Z_NEAR, TITLE_Z_FAR, TITLE_X_MAX, TITLE_Y_MAX);
     spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
   }
 }
 
-// ==================== COMETA: PERÍMETRO REDONDEADO REAL ====================
+// ==================== COMETA: PERÍMETRO REDONONDEADO REAL ====================
 function roundedRectPerimeterPoint(u, outWorld){
   u = ((u % 1) + 1) % 1;
 
@@ -1400,7 +1409,6 @@ renderer.setAnimationLoop(()=>{
   updateTitleLives(dt);
   updateTextFadeAndCleanup(t);
 
-  // ✅ partículas iniciales del título: ahora “hacia el espectador”
   updateTitleParticles(t, dt);
 
   tickHaptics(t);
@@ -1426,6 +1434,9 @@ async function enter(mode){
   });
   renderer.xr.setSession(s);
 
+  // ✅ en XR tamaño original (como Quest)
+  applyParticlePointSize();
+
   mapGrips(s);
   updateHaptics(s);
 
@@ -1436,6 +1447,8 @@ async function enter(mode){
 
   s.addEventListener("end", () => {
     overlay.style.display = "grid";
+    // ✅ al salir de XR (volver a móvil/flat) agrandamos puntos
+    applyParticlePointSize();
   });
 
   overlay.style.display = "none";
@@ -1445,6 +1458,9 @@ btnStart.onclick = async () => {
   try {
     loadPristinaFontNonBlocking();
     drawGradient(0, 0);
+
+    // ✅ en modo NO XR (móvil) agrandamos partículas ya desde el inicio
+    applyParticlePointSize();
 
     video.muted = false;
     video.volume = 1.0;
@@ -1498,6 +1514,9 @@ window.addEventListener("resize", ()=>{
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+
+  // ✅ por si cambia orientación (móvil), reaplicamos tamaño
+  applyParticlePointSize();
 });
 
 log("✅ App cargada. Pulsa “Iniciar vídeo”.");
