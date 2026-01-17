@@ -27,16 +27,16 @@
 </head>
 
 <body>
-<div id="overlay">
+<div id="overlay" style="display:none;">
   <div class="card">
     
     <img src="./DREAMSAR.png" alt="Dreams AR" style="display:block;margin:0 auto 20px auto;width:70%; border-radius:18px;">
 
-    <p style="font-family:PristinaAR, serif; text-align:center; margin:12px 0; font-size:26px; color:#fff;">
+    <p style="font-family:PristinaAR, serif; font-family:PristinaAR, serif; text-align:center; margin:12px 0; font-size:26px; color:#fff;">
       Siente la música en tus manos y en tu entorno.
     </p>
 
-    <button id="startExperience" style="font-family:PristinaAR, serif; padding:14px 22px; border-radius:14px;
+    <button id="startExperience" style="font-family:PristinaAR, serif; font-family:PristinaAR, serif; padding:14px 22px; border-radius:14px;
       border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.15); color:#fff; cursor:pointer;
       display:block; margin:12px auto 18px auto; font-size:22px;">
       Iniciar experiencia
@@ -59,6 +59,22 @@
 </div>
 
 <script type="module">
+
+// Load Pristina before showing overlay
+document.addEventListener("DOMContentLoaded", async () => {
+  const ov = document.getElementById("overlay");
+  ov.style.display = "none";
+  try {
+    const f = new FontFace("PristinaAR", "url(./PRISTINA.TTF)");
+    await f.load();
+    document.fonts.add(f);
+  } catch(e){
+    console.warn("Pristina no cargó:", e);
+  }
+  ov.style.display = "grid";
+});
+
+
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { VIDEO_URL, CUES } from "./cues.js";
 
