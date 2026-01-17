@@ -29,19 +29,13 @@
 <body>
 <div id="overlay">
   <div class="card">
-    <h2 style="margin:0 0 10px 0;">Experiencia AR</h2>
-    <p style="margin:0 0 14px 0;opacity:.9;">
-      Quest: háptica + partículas desde mandos. Móvil: vibración + partículas desde esquinas inferiores del vídeo.
-      Intro (0–14s): cometa 1 vuelta por el marco redondeado; rastro denso atraído hacia el espectador.
-      ✅ Título con halo + gradiente animado (“luz que pasa”).
-      ✅ Textos NO desaparecen al entrar el siguiente: hacen fade out a los 10s.
-      ✅ Fin: vídeo sin loop; al terminar se cierra AR/VR automáticamente.
-      ✅ Partículas iniciales del título: ahora se mueven hacia el espectador.
+    <h1 style="margin:0 0 18px 0; font-size:32px;">DREAMS AR</h1>
+    <img src="./DREAMSAR.png" alt="Dreams AR" style="width:70%; border-radius:18px; margin-bottom:20px;">
+    <p style="margin:0 0 20px 0;opacity:.9;font-size:18px;">
+      Siente la música en tus manos y en tu entorno.
     </p>
-
-    <button id="start">▶ Iniciar vídeo</button>
-    <button id="enterAR" disabled>Entrar en AR</button>
-    <button id="enterVR" disabled>Entrar en VR</button>
+    <button id="startExperience">🌟 Iniciar experiencia</button>
+    <div class="small" id="log"></div>
 
     <div class="small" id="log"></div>
   </div>
@@ -1471,9 +1465,8 @@ renderer.setAnimationLoop(()=>{
 });
 
 // ==================== BOTONES ====================
-const btnStart = document.getElementById("start");
-const btnAR = document.getElementById("enterAR");
-const btnVR = document.getElementById("enterVR");
+const btnStart = document.getElementById("startExperience");
+
 
 async function enter(mode){
   const s = await navigator.xr.requestSession(mode,{
@@ -1531,13 +1524,21 @@ btnStart.onclick = async () => {
       leftIdx  = resyncIndex(leftTimes,  ml);
 
       log("🟣 Listo. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
+
+      // auto enter AR
+      try{
+        const ok = await navigator.xr.isSessionSupported("immersive-ar");
+        if(ok) await enter("immersive-ar");
+        else log("AR no soportado");
+      }catch(e){ log("AR error: "+e.message); }
+
       log(("vibrate" in navigator) ? "📳 Vibración móvil disponible" : "ℹ️ Vibración móvil NO disponible (iOS suele bloquear)");
     }catch(e){
       log("⚠️ MIDI/háptica no disponibles: " + (e?.message || e));
     }
 
-    btnAR.disabled = false;
-    btnVR.disabled = false;
+    
+    
 
   } catch (e) {
     log("❌ No se pudo iniciar: " + (e?.message || e));
