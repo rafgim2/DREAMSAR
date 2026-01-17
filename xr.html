@@ -1,29 +1,31 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>XR AR Video + MIDI + Marco + Partículas + Cometa Intro (rastro atraído al espectador)</title>
-  <style>
-    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
-    #overlay{
-      position:fixed;inset:0;display:grid;place-items:center;
-      background:rgba(0,0,0,.85);color:#fff;z-index:10;text-align:center;padding:24px;
-    }
-    .card{
-      background:rgba(255,255,255,.08);
-      padding:20px;border-radius:18px;
-      max-width:860px;width:100%;
-    }
-    button{
-      padding:14px 18px;border-radius:14px;
-      border:1px solid rgba(255,255,255,.2);
-      background:rgba(255,255,255,.12);
-      color:#fff;cursor:pointer;margin:6px;
-    }
-    .small{opacity:.75;font-size:14px;margin-top:10px;text-align:left;white-space:pre-wrap}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>XR AR Video + MIDI + Marco + Partículas + Cometa Intro (rastro atraído al espectador)</title>
+
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Arial}
+  #overlay{
+    position:fixed;inset:0;display:grid;place-items:center;
+    background:rgba(0,0,0,.85);color:#fff;z-index:10;text-align:center;padding:24px;
+  }
+  .card{
+    background:rgba(255,255,255,.08);
+    padding:20px;border-radius:18px;
+    max-width:860px;width:100%;
+  }
+  button{
+    padding:14px 18px;border-radius:14px;
+    border:1px solid rgba(255,255,255,.2);
+    background:rgba(255,255,255,.12);
+    color:#fff;cursor:pointer;margin:6px;
+  }
+  .small{opacity:.75;font-size:14px;margin-top:10px;text-align:left;white-space:pre-wrap}
+</style>
 </head>
+
 <body>
 <div id="overlay">
   <div class="card">
@@ -36,9 +38,11 @@
       ✅ Fin: vídeo sin loop; al terminar se cierra AR/VR automáticamente.
       ✅ Partículas iniciales del título: ahora se mueven hacia el espectador.
     </p>
+
     <button id="start">▶ Iniciar vídeo</button>
     <button id="enterAR" disabled>Entrar en AR</button>
     <button id="enterVR" disabled>Entrar en VR</button>
+
     <div class="small" id="log"></div>
   </div>
 </div>
@@ -49,18 +53,18 @@ import { VIDEO_URL, CUES } from "./cues.js";
 
 const overlay = document.getElementById("overlay");
 const logEl = document.getElementById("log");
-const log = (m) => {
-  logEl.textContent += (logEl.textContent ? "\n" : "") + m;
-};
+const log = (m) => { logEl.textContent += (logEl.textContent ? "\n" : "") + m; };
 
 // ==================== CONFIG MIDI/HÁPTICA ====================
 const MIDI_RIGHT_URL = "./dream14.mid";
-const MIDI_LEFT_URL = "./dream14iz.mid";
+const MIDI_LEFT_URL  = "./dream14iz.mid";
+
 const MIDI_OFFSET_RIGHT = 22.5;
-const MIDI_OFFSET_LEFT = 8.5;
+const MIDI_OFFSET_LEFT  = 8.5;
 
 const HAPTIC_INTENSITY = 0.35;
-the HAPTIC_DURATION_MS = 18;
+const HAPTIC_DURATION_MS = 18;
+
 const HAPTIC_WINDOW = 0.020;
 const MIN_PULSE_GAP = 0.010;
 
@@ -69,7 +73,6 @@ const MOBILE_MIN_GAP = 0.055;
 
 // ==================== FUENTE PRISTINA (no bloqueante) ====================
 let FONT_READY = false;
-
 function loadPristinaFontNonBlocking(){
   try{
     const f = new FontFace("PristinaAR","url(./PRISTINA.TTF)");
@@ -82,7 +85,6 @@ function loadPristinaFontNonBlocking(){
     log("⚠️ FontFace no disponible (fallback)");
   }
 }
-
 const fontName = () => FONT_READY ? "PristinaAR" : "serif";
 
 // ==================== THREE / XR ====================
@@ -111,11 +113,11 @@ video.setAttribute("playsinline","");
 video.setAttribute("webkit-playsinline","");
 video.muted = false;
 video.volume = 1.0;
+
 video.style.position = "fixed";
 video.style.left = "-9999px";
 video.style.top = "-9999px";
-video.width = 1;
-video.height = 1;
+video.width = 1; video.height = 1;
 document.body.appendChild(video);
 
 video.addEventListener("error", () => {
@@ -129,10 +131,12 @@ videoTex.colorSpace = THREE.SRGBColorSpace;
 // ✅ Al terminar: salir de AR/VR automáticamente
 video.addEventListener("ended", async () => {
   log("⏹ Vídeo finalizado → saliendo de la experiencia");
+
   const s = renderer.xr.getSession?.();
   if (s){
     try{ await s.end(); }catch{}
   }
+
   overlay.style.display = "grid";
   btnAR.disabled = true;
   btnVR.disabled = true;
@@ -141,11 +145,10 @@ video.addEventListener("ended", async () => {
 // ===== Máscara redondeada para recortar el vídeo =====
 function makeRoundedAlphaMask(size = 512, r = 70){
   const c = document.createElement("canvas");
-  c.width = size;
-  c.height = size;
+  c.width = size; c.height = size;
   const ctx = c.getContext("2d");
-  ctx.clearRect(0,0,size,size);
 
+  ctx.clearRect(0,0,size,size);
   ctx.fillStyle = "black";
   ctx.fillRect(0,0,size,size);
 
@@ -172,7 +175,6 @@ function makeRoundedAlphaMask(size = 512, r = 70){
   tex.generateMipmaps = false;
   return tex;
 }
-
 const videoMaskTex = makeRoundedAlphaMask(512, 30);
 
 // ==================== PANTALLA ====================
@@ -200,17 +202,10 @@ const cornerBL = new THREE.Vector3();
 const cornerBR = new THREE.Vector3();
 
 function updateVideoCornersWorld(){
-  cornerTL.set(-screenW/2, screenH/2, 0.0001);
-  screen.localToWorld(cornerTL);
-
-  cornerTR.set( screenW/2, screenH/2, 0.0001);
-  screen.localToWorld(cornerTR);
-
-  cornerBL.set(-screenW/2, -screenH/2, 0.0001);
-  screen.localToWorld(cornerBL);
-
-  cornerBR.set( screenW/2, -screenH/2, 0.0001);
-  screen.localToWorld(cornerBR);
+  cornerTL.set(-screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTL);
+  cornerTR.set( screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTR);
+  cornerBL.set(-screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBL);
+  cornerBR.set( screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBR);
 }
 updateVideoCornersWorld();
 
@@ -226,8 +221,7 @@ const radius = 0.070;
 const zFront = 0.003;
 
 const gradCanvas = document.createElement("canvas");
-gradCanvas.width = 512;
-gradCanvas.height = 512;
+gradCanvas.width = 512; gradCanvas.height = 512;
 const gctx = gradCanvas.getContext("2d");
 const gradTex = new THREE.CanvasTexture(gradCanvas);
 gradTex.colorSpace = THREE.SRGBColorSpace;
@@ -240,11 +234,13 @@ function drawGradient(phase, energy){
   const angle = phase * 0.35 + energy * 0.25;
   const dx = Math.cos(angle) * 180;
   const dy = Math.sin(angle) * 180;
+
   const grd = gctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
   const a = 0.92 + energy * 0.06;
   grd.addColorStop(0.00, `rgba(255, 214, 100, ${a})`);
-  grd.addColorStop(0.50, `rgba(255, 140, 60, ${a})`);
-  grd.addColorStop(1.00, `rgba(120, 55, 20, ${a})`);
+  grd.addColorStop(0.50, `rgba(255, 140,  60, ${a})`);
+  grd.addColorStop(1.00, `rgba(120,  55,  20, ${a})`);
+
   gctx.fillStyle = grd;
   gctx.fillRect(0,0,512,512);
   gradTex.needsUpdate = true;
@@ -271,15 +267,11 @@ const innerW = outerW - border*2;
 const innerH = outerH - border*2;
 
 const outer = roundedRectShape(outerW, outerH, radius);
-const hole = roundedRectShape(innerW, innerH, Math.max(0.001, radius - border));
+const hole  = roundedRectShape(innerW, innerH, Math.max(0.001, radius - border));
 outer.holes.push(hole);
 
 const frameGeo = new THREE.ShapeGeometry(outer);
-const frameMat = new THREE.MeshBasicMaterial({
-  map: gradTex,
-  transparent:true,
-  opacity:0.85
-});
+const frameMat = new THREE.MeshBasicMaterial({ map: gradTex, transparent:true, opacity:0.85 });
 const frameMesh = new THREE.Mesh(frameGeo, frameMat);
 frameMesh.position.set(0,0,zFront);
 frameGroup.add(frameMesh);
@@ -297,6 +289,7 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
   const cx = w * 0.5, cy = h * 0.5;
   const dx = Math.cos(ang) * w * 0.55;
   const dy = Math.sin(ang) * h * 0.55;
+
   const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
 
   const p = 0.5 + 0.5 * Math.sin(phase * 0.85);
@@ -304,22 +297,23 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
 
   const a0 = clamp(p - band*2.0, 0, 1);
   const a1 = clamp(p - band*0.6, 0, 1);
-  const a2 = clamp(p, 0, 1);
+  const a2 = clamp(p,            0, 1);
   const a3 = clamp(p + band*0.6, 0, 1);
   const a4 = clamp(p + band*2.0, 0, 1);
 
-  const brown = [120, 55, 20];
+  const brown  = [120, 55, 20];
   const orange = [255,140, 60];
-  const gold = [255,214,100];
-  const hot2 = [255,245,235];
+  const gold   = [255,214,100];
+  const hot2   = [255,245,235];
 
-  g.addColorStop(0.00, rgb(brown[0], brown[1], brown[2], 0.95));
-  g.addColorStop(a0, rgb(brown[0], brown[1], brown[2], 0.95));
-  g.addColorStop(a1, rgb(orange[0], orange[1], orange[2], 0.98));
-  g.addColorStop(a2, rgb(hot2[0], hot2[1], hot2[2], 0.98));
-  g.addColorStop(a3, rgb(gold[0], gold[1], gold[2], 0.98));
-  g.addColorStop(a4, rgb(orange[0], orange[1], orange[2], 0.96));
-  g.addColorStop(1.00, rgb(brown[0], brown[1], brown[2], 0.95));
+  g.addColorStop(0.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a0,   rgb(brown[0],  brown[1],  brown[2],  0.95));
+  g.addColorStop(a1,   rgb(orange[0], orange[1], orange[2], 0.98));
+  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   0.98));
+  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.98));
+  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.96));
+  g.addColorStop(1.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
+
   return g;
 }
 
@@ -333,36 +327,42 @@ function makeAnimatedGlowColor(phase, alpha){
 
 // ==================== TEXTO “ESCRITURA” + FADE OUT ====================
 const TEXT_FADE_DELAY = 10.0;
-const TEXT_FADE_DUR = 1.4;
+const TEXT_FADE_DUR   = 1.4;
+
 const pad = 36;
 const TEXT_Z = -1.25;
-const TEXT_Y_TEXT = 1.65;
+const TEXT_Y_TEXT  = 1.65;
 const TEXT_Y_TITLE = 1.74;
+
 const TYPE_CPS_MIN = 8;
 const TYPE_CPS_MAX = 14;
 
 let activeType = "text";
 let activeFontPx = 56;
 let activeLineH = 78;
+
 let cursor = 0, nextT = 0;
 let prevVideoT = 0;
 
 const textObjects = [];
 let activeObj = null;
+
 let titleGlowTex = null;
 
 function makeGlowTexture(){
   const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
+  c.width = 256; c.height = 256;
   const cx = c.getContext("2d");
   cx.clearRect(0,0,256,256);
+
   const g = cx.createRadialGradient(128,128,0,128,128,110);
   g.addColorStop(0.0, "rgba(255, 190, 110, 0.60)");
-  g.addColorStop(0.45,"rgba(255, 140, 60, 0.22)");
+  g.addColorStop(0.45,"rgba(255, 140,  60, 0.22)");
   g.addColorStop(1.0, "rgba(0, 0, 0, 0)");
+
   cx.fillStyle = g;
   cx.fillRect(0,0,256,256);
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.minFilter = THREE.LinearFilter;
@@ -376,7 +376,7 @@ function setupText(lines, type = "text"){
   const isTitle = activeType === "title";
 
   activeFontPx = isTitle ? 96 : 56;
-  activeLineH = isTitle ? 112 : 78;
+  activeLineH  = isTitle ? 112 : 78;
 
   const fullLines = Array.isArray(lines) ? lines : [String(lines)];
 
@@ -388,8 +388,7 @@ function setupText(lines, type = "text"){
   const h = Math.ceil(fullLines.length * activeLineH + pad*2);
 
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -408,16 +407,14 @@ function setupText(lines, type = "text"){
     opacity: 1.0
   });
 
-  const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(physicalW, physicalH),
-    mat
-  );
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(physicalW, physicalH), mat);
   plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
   scene.add(plane);
 
   let glowMesh = null;
   if (isTitle){
     if (!titleGlowTex) titleGlowTex = makeGlowTexture();
+
     const gm = new THREE.MeshBasicMaterial({
       map: titleGlowTex,
       transparent: true,
@@ -426,8 +423,10 @@ function setupText(lines, type = "text"){
       blending: THREE.AdditiveBlending,
       opacity: 1.0
     });
+
     const gw = physicalW * 1.25;
     const gh = physicalH * 1.55;
+
     glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), gm);
     glowMesh.renderOrder = 998;
     glowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
@@ -436,13 +435,8 @@ function setupText(lines, type = "text"){
   }
 
   const obj = {
-    plane,
-    mat,
-    texture,
-    canvas,
-    ctx,
-    fullLines,
-    fullWidths,
+    plane, mat, texture, canvas, ctx,
+    fullLines, fullWidths,
     fullText: fullLines.join("\n"),
     isTitle,
     createdAt: video.currentTime,
@@ -450,21 +444,23 @@ function setupText(lines, type = "text"){
     lastDrawChars: 0,
     glowMesh
   };
+
   textObjects.push(obj);
+
   activeObj = obj;
   cursor = 0;
   nextT = 0;
-
   drawObj(activeObj, 0);
 }
 
 function drawObj(obj, chars){
   if (!obj) return;
+
   obj.lastDrawChars = chars;
 
   const { ctx, canvas, texture, fullLines, fullWidths, fullText, isTitle } = obj;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${activeFontPx}px ${fontName()}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -481,6 +477,7 @@ function drawObj(obj, chars){
     const phase = obj.lifePhase;
     const pulse = 0.5 + 0.5*Math.sin(phase * 2.0);
     const glowBoost = 0.95 + 0.35*pulse;
+
     const glowBig = makeAnimatedGlowColor(phase, 0.28);
     const glowMid = makeAnimatedGlowColor(phase, 0.55);
 
@@ -528,26 +525,25 @@ function drawObj(obj, chars){
 
   for (let i=0;i<fullLines.length;i++){
     const full = fullLines[i];
-    const vis = visible[i] || "";
+    const vis  = visible[i] || "";
     const left = cx - fullWidths[i]/2;
-    const vw = ctx.measureText(vis).width;
+    const vw   = ctx.measureText(vis).width;
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(left, y - activeLineH/2, vw, activeLineH);
     ctx.clip();
-    drawLine(full, cx, y);
-    ctx.restore();
 
+    drawLine(full, cx, y);
+
+    ctx.restore();
     y += activeLineH;
   }
 
   texture.needsUpdate = true;
 }
 
-function randomCps(){
-  return TYPE_CPS_MIN + Math.random() * (TYPE_CPS_MAX - TYPE_CPS_MIN);
-}
+function randomCps(){ return TYPE_CPS_MIN + Math.random() * (TYPE_CPS_MAX - TYPE_CPS_MIN); }
 
 function stepType(dt){
   if (!activeObj) return;
@@ -564,14 +560,17 @@ function stepType(dt){
 
 function updateTitleLives(dt){
   const FPS = 24;
+
   for (const o of textObjects){
     if (!o.isTitle) continue;
+
     const prev = o.lifePhase;
     o.lifePhase += dt;
 
     if (o.glowMesh){
       const pulse = 0.5 + 0.5*Math.sin(o.lifePhase * 2.0);
       o.glowMesh.material.opacity = o.mat.opacity * (0.78 + 0.30*pulse);
+
       const s = 1.0 + 0.02*pulse;
       o.glowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
     }
@@ -586,8 +585,8 @@ function updateTextFadeAndCleanup(t){
   for (let i = textObjects.length - 1; i >= 0; i--){
     const o = textObjects[i];
     const age = t - o.createdAt;
-    let op = 1.0;
 
+    let op = 1.0;
     if (age > TEXT_FADE_DELAY){
       const k = (age - TEXT_FADE_DELAY) / TEXT_FADE_DUR;
       op = 1.0 - clamp(k, 0, 1);
@@ -606,11 +605,13 @@ function updateTextFadeAndCleanup(t){
       o.plane.geometry.dispose();
       o.mat.dispose();
       o.texture.dispose();
+
       if (o.glowMesh){
         scene.remove(o.glowMesh);
         o.glowMesh.geometry.dispose();
         o.glowMesh.material.dispose();
       }
+
       textObjects.splice(i, 1);
       if (activeObj === o) activeObj = null;
     }
@@ -623,14 +624,12 @@ let nextCue = 0;
 
 // ==================== MIDI LIB + CARGA ====================
 let MidiLib = null;
-
 async function loadMidiLib(){
   if (MidiLib) return;
   log("⏳ Cargando librería MIDI…");
   MidiLib = await import("https://esm.sh/@tonejs/midi@2.0.28?bundle");
   log("✅ Librería MIDI lista");
 }
-
 async function loadMidiTimes(url){
   await loadMidiLib();
   const { Midi } = MidiLib;
@@ -653,11 +652,12 @@ scene.add(grip0);
 scene.add(grip1);
 
 let controllerRightObj = null;
-let controllerLeftObj = null;
+let controllerLeftObj  = null;
 
 function mapGrips(session){
   controllerRightObj = null;
-  controllerLeftObj = null;
+  controllerLeftObj  = null;
+
   const pointers = [];
   for (const src of session.inputSources){
     if (src.targetRayMode === "tracked-pointer") pointers.push(src);
@@ -666,44 +666,49 @@ function mapGrips(session){
     const src = pointers[i];
     const obj = (i === 0) ? grip0 : grip1;
     if (src.handedness === "right") controllerRightObj = obj;
-    if (src.handedness === "left") controllerLeftObj = obj;
+    if (src.handedness === "left")  controllerLeftObj  = obj;
   }
+
   log(controllerRightObj ? "🎮 Mando derecho mapeado" : "ℹ️ Sin mando derecho (modo móvil/hand-tracking)");
-  log(controllerLeftObj ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
+  log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
 }
 
 // ==================== PARTÍCULAS (shader + fade + atracción por partícula) ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
 const P_LIFE = 10;
+
 const PARTICLE_SPEED = 0.55;
 const TARGET_BIAS_PUSH = 0.045;
-const TARGET_ATTRACT = 0.20;
+const TARGET_ATTRACT   = 0.20;
 
 // Viewer extra (MIDI izq)
 const LEFT_VIEWER_PARTICLES = true;
 const LEFT_VIEWER_SPAWNS_PER_HIT = 1;
 const LEFT_VIEWER_SPAWN_PROB = 0.85;
+
 const VIEWER_Z_NEAR = 0.55;
-const VIEWER_Z_FAR = 1.35;
-const VIEWER_X_MAX = 0.75;
-const VIEWER_Y_MAX = 0.45;
+const VIEWER_Z_FAR  = 1.35;
+const VIEWER_X_MAX  = 0.75;
+const VIEWER_Y_MAX  = 0.45;
 
 // ==================== TÍTULO: PARTÍCULAS ALEATORIAS (2–14s) ====================
 const TITLE_PARTICLES_START = 2.0;
-const TITLE_PARTICLES_END = 14.0;
+const TITLE_PARTICLES_END   = 14.0;
+
 const TITLE_PARTICLE_RATE = 18;
 const TITLE_PARTICLE_LIFE = 3.6;
 const TITLE_PARTICLE_WARM = 0.95;
+
 const TITLE_Z_NEAR = 0.75;
-const TITLE_Z_FAR = 1.25;
-const TITLE_X_MAX = 0.42;
-const TITLE_Y_MAX = 0.22;
+const TITLE_Z_FAR  = 1.25;
+const TITLE_X_MAX  = 0.42;
+const TITLE_Y_MAX  = 0.22;
 
 const TITLE_TO_VIEWER_Z_NEAR = 0.18;
-const TITLE_TO_VIEWER_Z_FAR = 0.40;
-const TITLE_TO_VIEWER_X_MAX = 0.18;
-const TITLE_TO_VIEWER_Y_MAX = 0.10;
+const TITLE_TO_VIEWER_Z_FAR  = 0.40;
+const TITLE_TO_VIEWER_X_MAX  = 0.18;
+const TITLE_TO_VIEWER_Y_MAX  = 0.10;
 const TITLE_TO_VIEWER_ATTR_MUL = 2.6;
 const TITLE_TO_VIEWER_PUSH = 0.18;
 
@@ -714,18 +719,20 @@ const INTRO_NO_MIDI_SECONDS = 14.0;
 const COMET_ENABLED = true;
 const COMET_TURNS = 1.0;
 const COMET_SPRITE_SCALE = 0.14;
+
 const COMET_TRAIL_RATE = 220;
 const COMET_TRAIL_LIFE = 3.4;
 const COMET_TRAIL_WARM = 0.95;
+
 const COMET_ATTRACT_MUL = 4.0;
 const COMET_TO_VIEWER_PUSH = 0.28;
+
 const COMET_END_Z = 0.55;
 const COMET_END_Y = 0.06;
 
 function makeSpriteTexture(){
   const c = document.createElement("canvas");
-  c.width = 64;
-  c.height = 64;
+  c.width = 64; c.height = 64;
   const cx = c.getContext("2d");
   cx.clearRect(0,0,64,64);
   const g = cx.createRadialGradient(32,32,0,32,32,30);
@@ -740,15 +747,15 @@ function makeSpriteTexture(){
   tex.magFilter = THREE.LinearFilter;
   return tex;
 }
-
 const spriteTex = makeSpriteTexture();
 
 const positions = new Float32Array(MAX_PARTICLES * 3);
-const colors = new Float32Array(MAX_PARTICLES * 3);
-const alphas = new Float32Array(MAX_PARTICLES);
-const alive = new Float32Array(MAX_PARTICLES);
-const maxLife = new Float32Array(MAX_PARTICLES);
-const velocity = new Float32Array(MAX_PARTICLES * 3);
+const colors    = new Float32Array(MAX_PARTICLES * 3);
+const alphas    = new Float32Array(MAX_PARTICLES);
+const alive     = new Float32Array(MAX_PARTICLES);
+const maxLife   = new Float32Array(MAX_PARTICLES);
+const velocity  = new Float32Array(MAX_PARTICLES * 3);
+
 const attractMul = new Float32Array(MAX_PARTICLES);
 const targetX = new Float32Array(MAX_PARTICLES);
 const targetY = new Float32Array(MAX_PARTICLES);
@@ -756,8 +763,8 @@ const targetZ = new Float32Array(MAX_PARTICLES);
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-pGeom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-pGeom.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
+pGeom.setAttribute("aAlpha",   new THREE.BufferAttribute(alphas, 1));
 
 for (let i=0;i<MAX_PARTICLES;i++){
   alive[i] = 0;
@@ -771,19 +778,20 @@ for (let i=0;i<MAX_PARTICLES;i++){
    ✅ FIX XR móvil:
    - En "immersive-ar" de móvil, uSize=22 (Quest) es ENANO.
    - Detectamos si la sesión tiene mandos (tracked-pointer+gamepad):
-     * si NO → móvil AR → tamaño grande
-     * si SÍ → headset → tamaño normal
-============================================================ */
+       * si NO → móvil AR → tamaño grande
+       * si SÍ → headset → tamaño normal
+   ============================================================ */
 const isProbablyMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // calibres
-const POINT_SIZE_XR_HEADSET = 22.0;  // Quest / visor
-const POINT_SIZE_XR_MOBILE  = 64.0;  // 👈 móvil en XR (AR handheld)
-const POINT_SIZE_FLAT_MOBILE = 44.0; // móvil sin XR
+const POINT_SIZE_XR_HEADSET = 22.0;     // Quest / visor
+const POINT_SIZE_XR_MOBILE  = 64.0;     // 👈 móvil en XR (AR handheld)
+const POINT_SIZE_FLAT_MOBILE = 44.0;    // móvil sin XR (te iba bien)
 const POINT_SIZE_FLAT_DESKTOP = 28.0;
 
 function xrLooksLikeHeadset(session){
   if (!session) return false;
+
   // Si hay tracked-pointer con gamepad, casi seguro es visor con mandos (Quest)
   for (const src of session.inputSources){
     if (src?.targetRayMode === "tracked-pointer" && src?.gamepad) return true;
@@ -795,9 +803,7 @@ function applyParticlePointSize(session = null){
   const presenting = renderer.xr.isPresenting === true;
 
   if (!presenting){
-    pMat.uniforms.uSize.value = isProbablyMobile
-      ? POINT_SIZE_FLAT_MOBILE
-      : POINT_SIZE_FLAT_DESKTOP;
+    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_FLAT_MOBILE : POINT_SIZE_FLAT_DESKTOP;
     return;
   }
 
@@ -807,9 +813,7 @@ function applyParticlePointSize(session = null){
     pMat.uniforms.uSize.value = POINT_SIZE_XR_HEADSET;
   } else {
     // XR en móvil (AR handheld) → agranda fuerte
-    pMat.uniforms.uSize.value = isProbablyMobile
-      ? POINT_SIZE_XR_MOBILE
-      : POINT_SIZE_XR_HEADSET;
+    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_XR_MOBILE : POINT_SIZE_XR_HEADSET;
   }
 }
 
@@ -833,7 +837,10 @@ const pMat = new THREE.ShaderMaterial({
       vAlpha = aAlpha;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mvPosition;
+
       float dist = -mvPosition.z;
+
+      // tamaño ~ 1/dist, pero con mínimo (para evitar micro en XR)
       float s = uSize * (1.0 / max(0.18, dist));
       gl_PointSize = max(3.0, s);
     }
@@ -877,8 +884,8 @@ const tmpSpawn = new THREE.Vector3();
 const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
-const tmpCamDir = new THREE.Vector3();
-const tmpCamUp = new THREE.Vector3();
+const tmpCamDir   = new THREE.Vector3();
+const tmpCamUp    = new THREE.Vector3();
 const tmpCamRight = new THREE.Vector3();
 const tmpViewerPos = new THREE.Vector3();
 const tmpViewerEnd = new THREE.Vector3();
@@ -888,19 +895,12 @@ let cometTrailAcc = 0;
 let cometInited = false;
 const cometPos = new THREE.Vector3();
 const cometPrev = new THREE.Vector3();
-const cometDir = new THREE.Vector3();
+const cometDir  = new THREE.Vector3();
 
 // util
-function pickTarget(isRight){
-  return isRight ? cornerTR : cornerTL;
-}
-function pickMobileSpawn(isRight){
-  return isRight ? cornerBR : cornerBL;
-}
-function smoothstep01(x){
-  x = Math.max(0, Math.min(1, x));
-  return x*x*(3 - 2*x);
-}
+function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
+function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
+function smoothstep01(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
 
 // ==================== VIEWER POS ====================
 function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
@@ -917,6 +917,7 @@ function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
     .addScaledVector(tmpCamDir, z)
     .addScaledVector(tmpCamRight, x)
     .addScaledVector(tmpCamUp, y);
+
   return out;
 }
 
@@ -937,6 +938,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
+
     alive[i] = P_LIFE;
     maxLife[i] = P_LIFE;
     attractMul[i] = 1.0;
@@ -971,6 +973,7 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
     colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
+
     alphas[i] = 1.0;
   }
 
@@ -982,9 +985,11 @@ function spawnParticlesFrom(worldPos, warm, isRightSide){
 // spawn title particles
 function spawnTitleParticlesAt(worldPos, warm){
   const COUNT = 2;
+
   for (let k=0;k<COUNT;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
+
     alive[i] = TITLE_PARTICLE_LIFE;
     maxLife[i] = TITLE_PARTICLE_LIFE;
     attractMul[i] = TITLE_TO_VIEWER_ATTR_MUL;
@@ -1023,6 +1028,7 @@ function spawnTitleParticlesAt(worldPos, warm){
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.55 + 0.20*Math.random()) * b;
     colors[i*3+2] = (0.08 + 0.10*Math.random()) * b;
+
     alphas[i] = 1.0;
   }
 
@@ -1036,6 +1042,7 @@ function updateParticles(dt){
     if (alive[i] <= 0) continue;
 
     alive[i] -= dt;
+
     const ml = Math.max(0.001, maxLife[i]);
     const a = Math.max(0, alive[i] / ml);
     const fade = a * a;
@@ -1045,6 +1052,7 @@ function updateParticles(dt){
       tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
       tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
       tmpDir.copy(tmpTarget).sub(tmpPos);
+
       const dist = tmpDir.length();
       if (dist > 0.001){
         tmpDir.multiplyScalar(1.0 / dist);
@@ -1068,7 +1076,6 @@ function updateParticles(dt){
       alphas[i] = 0;
     }
   }
-
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
@@ -1076,6 +1083,7 @@ function updateParticles(dt){
 function spawnLeftViewerParticles(){
   if (!LEFT_VIEWER_PARTICLES) return;
   if (Math.random() > LEFT_VIEWER_SPAWN_PROB) return;
+
   for (let s=0; s<LEFT_VIEWER_SPAWNS_PER_HIT; s++){
     randomViewerWorldPos(tmpViewerPos, VIEWER_Z_NEAR, VIEWER_Z_FAR, VIEWER_X_MAX, VIEWER_Y_MAX);
     spawnParticlesFrom(tmpViewerPos, 0.90, false);
@@ -1085,10 +1093,12 @@ function spawnLeftViewerParticles(){
 function updateTitleParticles(t, dt){
   if (TITLE_PARTICLE_RATE <= 0) return;
   if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
+
   titleAcc += dt * TITLE_PARTICLE_RATE;
   const n = Math.floor(titleAcc);
   if (n <= 0) return;
   titleAcc -= n;
+
   for (let i=0;i<n;i++){
     randomViewerWorldPos(tmpViewerPos, TITLE_Z_NEAR, TITLE_Z_FAR, TITLE_X_MAX, TITLE_Y_MAX);
     spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
@@ -1098,15 +1108,16 @@ function updateTitleParticles(t, dt){
 // ==================== COMETA: PERÍMETRO REDONDEADO REAL ====================
 function roundedRectPerimeterPoint(u, outWorld){
   u = ((u % 1) + 1) % 1;
+
   const hw = outerW * 0.5;
   const hh = outerH * 0.5;
-  const r = Math.min(radius, hw - 0.001, hh - 0.001);
+  const r  = Math.min(radius, hw - 0.001, hh - 0.001);
 
-  const topLen = (outerW - 2*r);
+  const topLen  = (outerW - 2*r);
   const sideLen = (outerH - 2*r);
-  const arcLen = (Math.PI * 0.5) * r;
-  const total = 2*topLen + 2*sideLen + 4*arcLen;
+  const arcLen  = (Math.PI * 0.5) * r;
 
+  const total = 2*topLen + 2*sideLen + 4*arcLen;
   let s = u * total;
 
   const setLocalToWorld = (x,y)=>{
@@ -1172,7 +1183,6 @@ function viewerEndWorldPos(out){
   const camPos = camera.getWorldPosition(tmpPos);
   camera.getWorldDirection(tmpCamDir).normalize();
   tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
-
   out.copy(camPos)
     .addScaledVector(tmpCamDir, COMET_END_Z)
     .addScaledVector(tmpCamUp, COMET_END_Y);
@@ -1195,6 +1205,7 @@ function spawnCometTrail(worldPos, dt){
   for (let s=0; s<n; s++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
+
     alive[i] = COMET_TRAIL_LIFE;
     maxLife[i] = COMET_TRAIL_LIFE;
     attractMul[i] = COMET_ATTRACT_MUL;
@@ -1233,6 +1244,7 @@ function spawnCometTrail(worldPos, dt){
     colors[i*3+0] = 1.0 * b;
     colors[i*3+1] = (0.68 + 0.22*Math.random()) * b;
     colors[i*3+2] = (0.20 + 0.20*Math.random()) * b;
+
     alphas[i] = 1.0;
   }
 
@@ -1243,6 +1255,7 @@ function spawnCometTrail(worldPos, dt){
 
 function updateCometIntro(t, dt){
   if (!COMET_ENABLED) return;
+
   if (t >= INTRO_NO_MIDI_SECONDS){
     cometSprite.visible = false;
     cometMat.opacity = 0.0;
@@ -1251,15 +1264,16 @@ function updateCometIntro(t, dt){
   }
 
   cometSprite.visible = true;
+
   const p = Math.max(0, Math.min(1, t / INTRO_NO_MIDI_SECONDS));
-  const fadeIn = smoothstep01(p / 0.10);
+  const fadeIn  = smoothstep01(p / 0.10);
   const fadeOut = 1.0 - smoothstep01((p - 0.92) / 0.08);
   cometMat.opacity = 0.95 * fadeIn * fadeOut;
 
   const u = smoothstep01(p) * COMET_TURNS;
   roundedRectPerimeterPoint(u, cometPos);
-  cometSprite.position.copy(cometPos);
 
+  cometSprite.position.copy(cometPos);
   const pulse = 0.80 + 0.20*Math.sin(t * 6.8);
   cometSprite.scale.setScalar(COMET_SPRITE_SCALE * pulse);
 
@@ -1267,14 +1281,12 @@ function updateCometIntro(t, dt){
     cometPrev.copy(cometPos);
     cometInited = true;
   }
-
   spawnCometTrail(cometPos, dt);
   cometPrev.copy(cometPos);
 }
 
 // ==================== VIBRACIÓN MÓVIL ====================
 let lastMobileVibeAt = -999;
-
 function mobileVibrate(){
   if (!("vibrate" in navigator)) return;
   const now = performance.now() / 1000;
@@ -1286,36 +1298,36 @@ function mobileVibrate(){
 // ==================== HÁPTICA + MIDI ====================
 let rightHaptic = null;
 let leftHaptic = null;
+
 let rightTimes = [];
-let leftTimes = [];
+let leftTimes  = [];
 let rightIdx = 0;
-let leftIdx = 0;
+let leftIdx  = 0;
+
 let lastVideoTimeForLoop = 0;
 let lastPulseRightAt = -999;
-let lastPulseLeftAt = -999;
+let lastPulseLeftAt  = -999;
 
 function updateHaptics(session){
   rightHaptic = null;
   leftHaptic = null;
+
   for (const src of session.inputSources){
     if (!src.gamepad) continue;
     const acts = src.gamepad.hapticActuators;
     if (!acts || acts.length === 0) continue;
+
     if (src.handedness === "right") rightHaptic = acts[0];
-    if (src.handedness === "left") leftHaptic = acts[0];
+    if (src.handedness === "left")  leftHaptic  = acts[0];
   }
+
   log(rightHaptic ? "✅ Háptica derecha OK" : "ℹ️ Sin háptica derecha (modo móvil)");
-  log(leftHaptic ? "✅ Háptica izquierda OK" : "ℹ️ Sin háptica izquierda (modo móvil)");
+  log(leftHaptic  ? "✅ Háptica izquierda OK" : "ℹ️ Sin háptica izquierda (modo móvil)");
 }
 
 function pulseController(actuator){
   if (!actuator) return false;
-  try{
-    actuator.pulse(HAPTIC_INTENSITY, HAPTIC_DURATION_MS);
-    return true;
-  }catch{
-    return false;
-  }
+  try{ actuator.pulse(HAPTIC_INTENSITY, HAPTIC_DURATION_MS); return true; }catch{ return false; }
 }
 
 function resyncIndex(times, midiTime){
@@ -1328,7 +1340,6 @@ function resyncIndex(times, midiTime){
   return lo;
 }
 
-// ==================== 🔥 AQUÍ VA LA MODIFICACIÓN IMPORTANTE 🔥 ====================
 function tickHand(times, which, videoTime, midiTime){
   if (times.length === 0) return;
 
@@ -1342,14 +1353,9 @@ function tickHand(times, which, videoTime, midiTime){
           lastPulseRightAt = videoTime;
 
           if (controllerRightObj){
-            // Quest / gafas AR:
-            // 1) Partículas desde el mando
             controllerRightObj.getWorldPosition(tmpSpawn);
             spawnParticlesFrom(tmpSpawn, 0.55, true);
-            // 2) Y también desde la esquina inferior derecha del vídeo
-            spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           } else {
-            // Fallback móvil: ya usaba la esquina inferior derecha
             spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           }
         }
@@ -1366,18 +1372,14 @@ function tickHand(times, which, videoTime, midiTime){
         if (videoTime - lastPulseLeftAt > MIN_PULSE_GAP){
           const ok = pulseController(leftHaptic);
           if (!ok) mobileVibrate();
+
           lastPulseLeftAt = videoTime;
           frameEnergy = Math.min(1.0, frameEnergy + 0.16);
 
           if (controllerLeftObj){
-            // Quest / gafas AR:
-            // 1) Partículas desde el mando
             controllerLeftObj.getWorldPosition(tmpSpawn);
             spawnParticlesFrom(tmpSpawn, 0.90, false);
-            // 2) Y también desde la esquina inferior izquierda del vídeo
-            spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           } else {
-            // Fallback móvil: ya usaba la esquina inferior izquierda
             spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           }
 
@@ -1390,7 +1392,6 @@ function tickHand(times, which, videoTime, midiTime){
     }
   }
 }
-// ==================== FIN DE LA MODIFICACIÓN ====================
 
 function tickHaptics(videoTime){
   if (rightTimes.length === 0 && leftTimes.length === 0) return;
@@ -1399,7 +1400,7 @@ function tickHaptics(videoTime){
     const mr = Math.max(0, videoTime - MIDI_OFFSET_RIGHT);
     const ml = Math.max(0, videoTime - MIDI_OFFSET_LEFT);
     rightIdx = resyncIndex(rightTimes, mr);
-    leftIdx = resyncIndex(leftTimes, ml);
+    leftIdx  = resyncIndex(leftTimes,  ml);
   }
   lastVideoTimeForLoop = videoTime;
 
@@ -1407,7 +1408,7 @@ function tickHaptics(videoTime){
   const midiTimeL = videoTime - MIDI_OFFSET_LEFT;
 
   if (midiTimeR >= 0) tickHand(rightTimes, "R", videoTime, midiTimeR);
-  if (midiTimeL >= 0) tickHand(leftTimes, "L", videoTime, midiTimeL);
+  if (midiTimeL >= 0) tickHand(leftTimes,  "L", videoTime, midiTimeL);
 }
 
 // ==================== RENDER LOOP ====================
@@ -1429,7 +1430,9 @@ renderer.setAnimationLoop(()=>{
   stepType(dt);
   updateTitleLives(dt);
   updateTextFadeAndCleanup(t);
+
   updateTitleParticles(t, dt);
+
   tickHaptics(t);
   updateCometIntro(t, dt);
 
@@ -1455,12 +1458,14 @@ async function enter(mode){
 
   // ✅ aplica tamaño correcto según tipo de XR (móvil vs visor)
   applyParticlePointSize(s);
+
   mapGrips(s);
   updateHaptics(s);
 
   s.addEventListener("inputsourceschange", () => {
     mapGrips(s);
     updateHaptics(s);
+
     // ✅ re-evalúa: algunos móviles cambian inputSources tarde
     applyParticlePointSize(s);
   });
@@ -1477,6 +1482,7 @@ btnStart.onclick = async () => {
   try {
     loadPristinaFontNonBlocking();
     drawGradient(0, 0);
+
     // en modo plano
     applyParticlePointSize(null);
 
@@ -1497,7 +1503,7 @@ btnStart.onclick = async () => {
       const mr = Math.max(0, video.currentTime - MIDI_OFFSET_RIGHT);
       const ml = Math.max(0, video.currentTime - MIDI_OFFSET_LEFT);
       rightIdx = resyncIndex(rightTimes, mr);
-      leftIdx = resyncIndex(leftTimes, ml);
+      leftIdx  = resyncIndex(leftTimes,  ml);
 
       log("🟣 Listo. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
       log(("vibrate" in navigator) ? "📳 Vibración móvil disponible" : "ℹ️ Vibración móvil NO disponible (iOS suele bloquear)");
@@ -1507,6 +1513,7 @@ btnStart.onclick = async () => {
 
     btnAR.disabled = false;
     btnVR.disabled = false;
+
   } catch (e) {
     log("❌ No se pudo iniciar: " + (e?.message || e));
   }
@@ -1523,17 +1530,15 @@ btnAR.onclick = async () => {
 };
 
 btnVR.onclick = async () => {
-  try{
-    await enter("immersive-vr");
-  } catch(e){
-    log("❌ VR: " + (e?.message || e));
-  }
+  try{ await enter("immersive-vr"); }
+  catch(e){ log("❌ VR: " + (e?.message || e)); }
 };
 
 window.addEventListener("resize", ()=>{
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+
   // si rota el móvil en XR/plano
   applyParticlePointSize(renderer.xr.getSession?.() ?? null);
 });
