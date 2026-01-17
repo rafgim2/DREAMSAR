@@ -1532,49 +1532,40 @@ async function enter(mode){
 btnStart.onclick = async () => {
   try {
     loadPristinaFontNonBlocking();
-    drawGradient(0, 0);
-
-    // en modo plano
-    applyParticlePointSize(null);
-
-    video.muted = false;
-    video.volume = 1.0;
-    await video.play();
-    log("▶ Vídeo iniciado (con sonido)");
-
+    overlay.style.display = "none";
+    let ok = false;
+    try{
+      ok = await navigator.xr.isSessionSupported("immersive-ar");
+    }catch(e){
+      log("AR no disponible: " + e.message);
+    }
+    if (!ok){
+      log("AR no soportado en este dispositivo");
+      return;
+    }
+    await enter("immersive-ar");
+    try{
+      video.muted = false;
+      video.volume = 1.0;
+      await video.play();
+      log("▶ Vídeo iniciado (con sonido)");
+    }catch(e){
+      log("❌ Error al iniciar vídeo en AR: " + e.message);
+    }
     try{
       log("⏳ Cargando MIDI derecha...");
       rightTimes = await loadMidiTimes(MIDI_RIGHT_URL);
-      log("✅ MIDI derecha OK (" + rightTimes.length + " notas)");
-
+      log("✅ MIDI derecha OK");
       log("⏳ Cargando MIDI izquierda...");
       leftTimes = await loadMidiTimes(MIDI_LEFT_URL);
-      log("✅ MIDI izquierda OK (" + leftTimes.length + " notas)");
-
-      const mr = Math.max(0, video.currentTime - MIDI_OFFSET_RIGHT);
-      const ml = Math.max(0, video.currentTime - MIDI_OFFSET_LEFT);
-      rightIdx = resyncIndex(rightTimes, mr);
-      leftIdx  = resyncIndex(leftTimes,  ml);
-
-      log("🟣 Listo. Offsets: R=" + MIDI_OFFSET_RIGHT + "s, L=" + MIDI_OFFSET_LEFT + "s");
-
-      // auto enter AR
-      try{
-        const ok = await navigator.xr.isSessionSupported("immersive-ar");
-        if(ok) await enter("immersive-ar");
-        else log("AR no soportado");
-      }catch(e){ log("AR error: "+e.message); }
-
-      log(("vibrate" in navigator) ? "📳 Vibración móvil disponible" : "ℹ️ Vibración móvil NO disponible (iOS suele bloquear)");
+      log("✅ MIDI izquierda OK");
+      rightIdx = resyncIndex(rightTimes, video.currentTime - MIDI_OFFSET_RIGHT);
+      leftIdx  = resyncIndex(leftTimes,  video.currentTime - MIDI_OFFSET_LEFT);
     }catch(e){
-      log("⚠️ MIDI/háptica no disponibles: " + (e?.message || e));
+      log("⚠️ MIDI no cargó: " + (e?.message || e));
     }
-
-    
-    
-
   } catch (e) {
-    log("❌ No se pudo iniciar: " + (e?.message || e));
+    log("❌ Falló inicio: " + (e?.message || e));
   }
 };
 
@@ -1606,4 +1597,3 @@ log("✅ App cargada. Pulsa “Iniciar vídeo”.");
 </script>
 </body>
 </html>
-
