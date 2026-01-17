@@ -309,725 +309,287 @@ function makeAnimatedTitleGradient(ctx, phase, w, h){
   g.addColorStop(0.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
   g.addColorStop(a0,   rgb(brown[0],  brown[1],  brown[2],  0.95));
   g.addColorStop(a1,   rgb(orange[0], orange[1], orange[2], 0.98));
-  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   0.98));
-  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.98));
-  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.96));
+  g.addColorStop(a2,   rgb(hot2[0],   hot2[1],   hot2[2],   1.00));
+  g.addColorStop(a3,   rgb(gold[0],   gold[1],   gold[2],   0.99));
+  g.addColorStop(a4,   rgb(orange[0], orange[1], orange[2], 0.98));
   g.addColorStop(1.00, rgb(brown[0],  brown[1],  brown[2],  0.95));
 
   return g;
 }
 
-function makeAnimatedGlowColor(phase, alpha){
-  const t = 0.5 + 0.5*Math.sin(phase * 0.7);
-  const r = lerp(255, 255, t);
-  const g = lerp(140, 214, t);
-  const b = lerp( 60, 100, t);
-  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
-}
+// ==================== TEXTO 3D "ESCRITURA" (CANVAS + SPRITE) ====================
+const textGroup = new THREE.Group();
+scene.add(textGroup);
 
-// ==================== TEXTO “ESCRITURA” + FADE OUT ====================
-const TEXT_FADE_DELAY = 10.0;
-const TEXT_FADE_DUR   = 1.4;
+let currentSprite = null;
+let currentCanvas = null;
+let currentCtx = null;
 
-const pad = 36;
-const TEXT_Z = -1.25;
-const TEXT_Y_TEXT  = 1.65;
-const TEXT_Y_TITLE = 1.74;
+let typingText = "";
+let typingIndex = 0;
+let typingTimer = 0;
+let typingActive = false;
 
-const TYPE_CPS_MIN = 8;
-const TYPE_CPS_MAX = 14;
+let textStartedAt = 0;
+const TEXT_MAX_LIFE = 10.0;
+const TEXT_FADE_SECONDS = 0.65;
 
-let activeType = "text";
-let activeFontPx = 56;
-let activeLineH = 78;
+let activeTextSprites = [];
 
-let cursor = 0, nextT = 0;
-let prevVideoT = 0;
-
-const textObjects = [];
-let activeObj = null;
-
-let titleGlowTex = null;
-
-function makeGlowTexture(){
-  const c = document.createElement("canvas");
-  c.width = 256; c.height = 256;
-  const cx = c.getContext("2d");
-  cx.clearRect(0,0,256,256);
-
-  const g = cx.createRadialGradient(128,128,0,128,128,110);
-  g.addColorStop(0.0, "rgba(255, 190, 110, 0.60)");
-  g.addColorStop(0.45,"rgba(255, 140,  60, 0.22)");
-  g.addColorStop(1.0, "rgba(0, 0, 0, 0)");
-
-  cx.fillStyle = g;
-  cx.fillRect(0,0,256,256);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false;
-  return tex;
-}
-
-function setupText(lines, type = "text"){
-  activeType = type || "text";
-  const isTitle = activeType === "title";
-
-  activeFontPx = isTitle ? 96 : 56;
-  activeLineH  = isTitle ? 112 : 78;
-
-  const fullLines = Array.isArray(lines) ? lines : [String(lines)];
-
-  const mctx = document.createElement("canvas").getContext("2d");
-  mctx.font = `${activeFontPx}px ${fontName()}`;
-  const fullWidths = fullLines.map(l => mctx.measureText(l).width);
-
-  const w = Math.ceil(Math.max(...fullWidths) + pad*2);
-  const h = Math.ceil(fullLines.length * activeLineH + pad*2);
-
+function setupText(newText, type="text"){
   const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
+  const maxW = 1024;
+  const lineH = 78;
+  const pad = 64;
 
-  const aspect = w / h;
-  const physicalH = isTitle ? 0.36 : 0.30;
-  const physicalW = physicalH * aspect;
+  canvas.width = maxW;
+  canvas.height = 512;
 
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthWrite: false,
-    opacity: 1.0
+  function wrapLines(text){
+    ctx.font = `54px ${fontName()}`;
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = "";
+    for (const w of words){
+      const test = line ? (line + " " + w) : w;
+      if (ctx.measureText(test).width > (maxW - pad*2)){
+        if (line) lines.push(line);
+        line = w;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  const lines = wrapLines(newText);
+  const h = Math.min(820, pad*2 + lines.length*lineH);
+  canvas.height = Math.max(320, h);
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const phase = performance.now() * 0.0015;
+  const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
+
+  const haloColor = "rgba(0,0,0,0.75)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  ctx.font = `54px ${fontName()}`;
+
+  const x = canvas.width/2;
+  let y = pad;
+
+  ctx.lineJoin = "round";
+
+  for (const ln of lines){
+    ctx.save();
+    ctx.strokeStyle = haloColor;
+    ctx.lineWidth = 16;
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 24;
+    ctx.strokeText(ln, x, y);
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = grad;
+    ctx.shadowColor = "rgba(0,0,0,0.15)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(ln, x, y);
+    ctx.restore();
+
+    y += lineH;
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity:1.0 });
+  const sprite = new THREE.Sprite(spriteMat);
+
+  const aspect = canvas.width / canvas.height;
+  const baseH = 0.35;
+  sprite.scale.set(baseH * aspect, baseH, 1);
+
+  sprite.position.set(0, 1.95, -1.25);
+
+  textGroup.add(sprite);
+
+  activeTextSprites.push({
+    sprite,
+    mat: spriteMat,
+    tex,
+    start: video.currentTime,
+    dying: false,
+    killed: false
   });
 
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(physicalW, physicalH), mat);
-  plane.position.set(0, isTitle ? TEXT_Y_TITLE : TEXT_Y_TEXT, TEXT_Z);
-  scene.add(plane);
+  typingText = newText;
+  typingIndex = newText.length;
+  typingActive = false;
+  textStartedAt = video.currentTime;
 
-  let glowMesh = null;
-  if (isTitle){
-    if (!titleGlowTex) titleGlowTex = makeGlowTexture();
-
-    const gm = new THREE.MeshBasicMaterial({
-      map: titleGlowTex,
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.AdditiveBlending,
-      opacity: 1.0
-    });
-
-    const gw = physicalW * 1.25;
-    const gh = physicalH * 1.55;
-
-    glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), gm);
-    glowMesh.renderOrder = 998;
-    glowMesh.position.set(plane.position.x, plane.position.y, plane.position.z - 0.01);
-    glowMesh.quaternion.copy(plane.quaternion);
-    scene.add(glowMesh);
-  }
-
-  const obj = {
-    plane, mat, texture, canvas, ctx,
-    fullLines, fullWidths,
-    fullText: fullLines.join("\n"),
-    isTitle,
-    createdAt: video.currentTime,
-    lifePhase: 0,
-    lastDrawChars: 0,
-    glowMesh
-  };
-
-  textObjects.push(obj);
-
-  activeObj = obj;
-  cursor = 0;
-  nextT = 0;
-  drawObj(activeObj, 0);
+  spawnTitleParticles();
 }
 
-function drawObj(obj, chars){
-  if (!obj) return;
+// ==================== FADE OUT TEXTOS VIEJOS ====================
+function updateTextFadeAndCleanup(nowT){
+  for (const item of activeTextSprites){
+    if (item.killed) continue;
 
-  obj.lastDrawChars = chars;
-
-  const { ctx, canvas, texture, fullLines, fullWidths, fullText, isTitle } = obj;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = `${activeFontPx}px ${fontName()}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  function drawLine(str, x, y){
-    if (!isTitle){
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.shadowColor = "rgba(0,0,0,0.85)";
-      ctx.shadowBlur = 20;
-      ctx.fillText(str, x, y);
-      return;
+    const age = nowT - item.start;
+    if (!item.dying && age >= TEXT_MAX_LIFE){
+      item.dying = true;
+      item.dieAt = nowT;
     }
 
-    const phase = obj.lifePhase;
-    const pulse = 0.5 + 0.5*Math.sin(phase * 2.0);
-    const glowBoost = 0.95 + 0.35*pulse;
+    if (item.dying){
+      const t = (nowT - item.dieAt) / TEXT_FADE_SECONDS;
+      const k = 1 - clamp(t, 0, 1);
+      item.mat.opacity = k;
 
-    const glowBig = makeAnimatedGlowColor(phase, 0.28);
-    const glowMid = makeAnimatedGlowColor(phase, 0.55);
-
-    ctx.save();
-    ctx.fillStyle = glowBig;
-    ctx.shadowColor = glowBig;
-    ctx.shadowBlur = 58 * glowBoost;
-    ctx.fillText(str, x, y);
-    ctx.restore();
-
-    ctx.save();
-    ctx.fillStyle = glowMid;
-    ctx.shadowColor = glowMid;
-    ctx.shadowBlur = 30 * glowBoost;
-    ctx.fillText(str, x, y);
-    ctx.restore();
-
-    ctx.save();
-    ctx.lineWidth = Math.max(2, activeFontPx * 0.06);
-    ctx.strokeStyle = "rgba(120, 55, 20, 0.25)";
-    ctx.shadowBlur = 0;
-    ctx.strokeText(str, x, y);
-    ctx.restore();
-
-    ctx.save();
-    const grad = makeAnimatedTitleGradient(ctx, phase, canvas.width, canvas.height);
-    ctx.fillStyle = grad;
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = 6;
-    ctx.fillText(str, x, y);
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = "rgba(255,245,235,1.0)";
-    ctx.shadowColor = "rgba(255,235,210,0.9)";
-    ctx.shadowBlur = 14 * glowBoost;
-    ctx.fillText(str, x, y);
-    ctx.restore();
-  }
-
-  const visible = fullText.slice(0, chars).split("\n");
-  const cx = canvas.width / 2;
-  let y = pad + activeLineH/2;
-
-  for (let i=0;i<fullLines.length;i++){
-    const full = fullLines[i];
-    const vis  = visible[i] || "";
-    const left = cx - fullWidths[i]/2;
-    const vw   = ctx.measureText(vis).width;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(left, y - activeLineH/2, vw, activeLineH);
-    ctx.clip();
-
-    drawLine(full, cx, y);
-
-    ctx.restore();
-    y += activeLineH;
-  }
-
-  texture.needsUpdate = true;
-}
-
-function randomCps(){ return TYPE_CPS_MIN + Math.random() * (TYPE_CPS_MAX - TYPE_CPS_MIN); }
-
-function stepType(dt){
-  if (!activeObj) return;
-  const fullText = activeObj.fullText;
-  if (!fullText || cursor >= fullText.length) return;
-
-  nextT -= dt;
-  while (nextT <= 0 && cursor < fullText.length){
-    cursor++;
-    drawObj(activeObj, cursor);
-    nextT += 1 / randomCps();
-  }
-}
-
-function updateTitleLives(dt){
-  const FPS = 24;
-
-  for (const o of textObjects){
-    if (!o.isTitle) continue;
-
-    const prev = o.lifePhase;
-    o.lifePhase += dt;
-
-    if (o.glowMesh){
-      const pulse = 0.5 + 0.5*Math.sin(o.lifePhase * 2.0);
-      o.glowMesh.material.opacity = o.mat.opacity * (0.78 + 0.30*pulse);
-
-      const s = 1.0 + 0.02*pulse;
-      o.glowMesh.scale.set(s, 1.0 + 0.03*pulse, 1);
-    }
-
-    if (Math.floor(o.lifePhase * FPS) !== Math.floor(prev * FPS)){
-      drawObj(o, o.lastDrawChars);
-    }
-  }
-}
-
-function updateTextFadeAndCleanup(t){
-  for (let i = textObjects.length - 1; i >= 0; i--){
-    const o = textObjects[i];
-    const age = t - o.createdAt;
-
-    let op = 1.0;
-    if (age > TEXT_FADE_DELAY){
-      const k = (age - TEXT_FADE_DELAY) / TEXT_FADE_DUR;
-      op = 1.0 - clamp(k, 0, 1);
-    }
-
-    o.mat.opacity = op;
-    o.plane.visible = op > 0.001;
-
-    if (o.glowMesh){
-      o.glowMesh.visible = op > 0.001;
-      if (op <= 0.001) o.glowMesh.material.opacity = 0.0;
-    }
-
-    if (age > TEXT_FADE_DELAY + TEXT_FADE_DUR + 0.15){
-      scene.remove(o.plane);
-      o.plane.geometry.dispose();
-      o.mat.dispose();
-      o.texture.dispose();
-
-      if (o.glowMesh){
-        scene.remove(o.glowMesh);
-        o.glowMesh.geometry.dispose();
-        o.glowMesh.material.dispose();
+      if (t >= 1){
+        textGroup.remove(item.sprite);
+        item.tex.dispose();
+        item.mat.dispose();
+        item.killed = true;
       }
-
-      textObjects.splice(i, 1);
-      if (activeObj === o) activeObj = null;
     }
+  }
+
+  if (activeTextSprites.length > 0){
+    activeTextSprites = activeTextSprites.filter(x => !x.killed);
   }
 }
 
 // ==================== CUES ====================
-const cues = [...CUES].sort((a,b)=>a.t-b.t);
+const cues = CUES || [];
 let nextCue = 0;
 
-// ==================== MIDI LIB + CARGA ====================
-let MidiLib = null;
-async function loadMidiLib(){
-  if (MidiLib) return;
-  log("⏳ Cargando librería MIDI…");
-  MidiLib = await import("https://esm.sh/@tonejs/midi@2.0.28?bundle");
-  log("✅ Librería MIDI lista");
-}
-async function loadMidiTimes(url){
-  await loadMidiLib();
-  const { Midi } = MidiLib;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("No se pudo cargar " + url);
-  const ab = await res.arrayBuffer();
-  const midi = new Midi(ab);
-  const times = [];
-  for (const track of midi.tracks){
-    for (const n of track.notes) times.push(n.time);
-  }
-  times.sort((a,b)=>a-b);
-  return times;
-}
-
-// ==================== CONTROLLERS (Quest) ====================
-const grip0 = renderer.xr.getControllerGrip(0);
-const grip1 = renderer.xr.getControllerGrip(1);
-scene.add(grip0);
-scene.add(grip1);
-
-let controllerRightObj = null;
-let controllerLeftObj  = null;
-
-function mapGrips(session){
-  controllerRightObj = null;
-  controllerLeftObj  = null;
-
-  const pointers = [];
-  for (const src of session.inputSources){
-    if (src.targetRayMode === "tracked-pointer") pointers.push(src);
-  }
-  for (let i=0;i<pointers.length;i++){
-    const src = pointers[i];
-    const obj = (i === 0) ? grip0 : grip1;
-    if (src.handedness === "right") controllerRightObj = obj;
-    if (src.handedness === "left")  controllerLeftObj  = obj;
-  }
-
-  log(controllerRightObj ? "🎮 Mando derecho mapeado" : "ℹ️ Sin mando derecho (modo móvil/hand-tracking)");
-  log(controllerLeftObj  ? "🎮 Mando izquierdo mapeado" : "ℹ️ Sin mando izquierdo (modo móvil/hand-tracking)");
-}
-
-// ==================== PARTÍCULAS (shader + fade + atracción por partícula) ====================
+// ==================== PARTICULAS (shader) ====================
 const MAX_PARTICLES = 260;
 const P_SPAWN = 3;
-const P_LIFE = 10;
-
+const P_LIFE = 10.0;
 const PARTICLE_SPEED = 0.55;
+
 const TARGET_BIAS_PUSH = 0.045;
-const TARGET_ATTRACT   = 0.20;
-
-// Viewer extra (MIDI izq)
-const LEFT_VIEWER_PARTICLES = true;
-const LEFT_VIEWER_SPAWNS_PER_HIT = 1;
-const LEFT_VIEWER_SPAWN_PROB = 0.85;
-
-const VIEWER_Z_NEAR = 0.55;
-const VIEWER_Z_FAR  = 1.35;
-const VIEWER_X_MAX  = 0.75;
-const VIEWER_Y_MAX  = 0.45;
-
-// ==================== TÍTULO: PARTÍCULAS ALEATORIAS (2–14s) ====================
-const TITLE_PARTICLES_START = 2.0;
-const TITLE_PARTICLES_END   = 14.0;
-
-const TITLE_PARTICLE_RATE = 18;
-const TITLE_PARTICLE_LIFE = 3.6;
-const TITLE_PARTICLE_WARM = 0.95;
-
-const TITLE_Z_NEAR = 0.75;
-const TITLE_Z_FAR  = 1.25;
-const TITLE_X_MAX  = 0.42;
-const TITLE_Y_MAX  = 0.22;
-
-const TITLE_TO_VIEWER_Z_NEAR = 0.18;
-const TITLE_TO_VIEWER_Z_FAR  = 0.40;
-const TITLE_TO_VIEWER_X_MAX  = 0.18;
-const TITLE_TO_VIEWER_Y_MAX  = 0.10;
-const TITLE_TO_VIEWER_ATTR_MUL = 2.6;
-const TITLE_TO_VIEWER_PUSH = 0.18;
-
-let titleAcc = 0;
-
-// ==================== COMETA INTRO (0–14s) ====================
-const INTRO_NO_MIDI_SECONDS = 14.0;
-const COMET_ENABLED = true;
-const COMET_TURNS = 1.0;
-const COMET_SPRITE_SCALE = 0.14;
-
-const COMET_TRAIL_RATE = 220;
-const COMET_TRAIL_LIFE = 3.4;
-const COMET_TRAIL_WARM = 0.95;
-
-const COMET_ATTRACT_MUL = 4.0;
-const COMET_TO_VIEWER_PUSH = 0.28;
-
-const COMET_END_Z = 0.55;
-const COMET_END_Y = 0.06;
-
-function makeSpriteTexture(){
-  const c = document.createElement("canvas");
-  c.width = 64; c.height = 64;
-  const cx = c.getContext("2d");
-  cx.clearRect(0,0,64,64);
-  const g = cx.createRadialGradient(32,32,0,32,32,30);
-  g.addColorStop(0.0,"rgba(255,255,255,1)");
-  g.addColorStop(0.6,"rgba(255,255,255,0.35)");
-  g.addColorStop(1.0,"rgba(255,255,255,0)");
-  cx.fillStyle = g;
-  cx.fillRect(0,0,64,64);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  return tex;
-}
-const spriteTex = makeSpriteTexture();
+const TARGET_ATTRACT = 0.20;
 
 const positions = new Float32Array(MAX_PARTICLES * 3);
+const velocity  = new Float32Array(MAX_PARTICLES * 3);
 const colors    = new Float32Array(MAX_PARTICLES * 3);
 const alphas    = new Float32Array(MAX_PARTICLES);
-const alive     = new Float32Array(MAX_PARTICLES);
-const maxLife   = new Float32Array(MAX_PARTICLES);
-const velocity  = new Float32Array(MAX_PARTICLES * 3);
 
-const attractMul = new Float32Array(MAX_PARTICLES);
-const targetX = new Float32Array(MAX_PARTICLES);
-const targetY = new Float32Array(MAX_PARTICLES);
-const targetZ = new Float32Array(MAX_PARTICLES);
+const targetX   = new Float32Array(MAX_PARTICLES);
+const targetY   = new Float32Array(MAX_PARTICLES);
+const targetZ   = new Float32Array(MAX_PARTICLES);
+const life      = new Float32Array(MAX_PARTICLES);
+const alive     = new Uint8Array(MAX_PARTICLES);
+
+let pCursor = 0;
 
 const pGeom = new THREE.BufferGeometry();
 pGeom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 pGeom.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
 pGeom.setAttribute("aAlpha",   new THREE.BufferAttribute(alphas, 1));
 
-for (let i=0;i<MAX_PARTICLES;i++){
-  alive[i] = 0;
-  maxLife[i] = P_LIFE;
-  attractMul[i] = 1.0;
-  positions[i*3+1] = -999;
-  alphas[i]=0;
-}
-
-/* ============================================================
-   ✅ FIX XR móvil:
-   - En "immersive-ar" de móvil, uSize=22 (Quest) es ENANO.
-   - Detectamos si la sesión tiene mandos (tracked-pointer+gamepad):
-       * si NO → móvil AR → tamaño grande
-       * si SÍ → headset → tamaño normal
-   ============================================================ */
-const isProbablyMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-// calibres
-const POINT_SIZE_XR_HEADSET = 22.0;     // Quest / visor
-const POINT_SIZE_XR_MOBILE  = 64.0;     // 👈 móvil en XR (AR handheld)
-const POINT_SIZE_FLAT_MOBILE = 44.0;    // móvil sin XR (te iba bien)
-const POINT_SIZE_FLAT_DESKTOP = 28.0;
-
-function xrLooksLikeHeadset(session){
-  if (!session) return false;
-
-  // Si hay tracked-pointer con gamepad, casi seguro es visor con mandos (Quest)
-  for (const src of session.inputSources){
-    if (src?.targetRayMode === "tracked-pointer" && src?.gamepad) return true;
-  }
-  return false;
-}
-
-function applyParticlePointSize(session = null){
-  const presenting = renderer.xr.isPresenting === true;
-
-  if (!presenting){
-    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_FLAT_MOBILE : POINT_SIZE_FLAT_DESKTOP;
-    return;
-  }
-
-  // Estamos en XR:
-  const headset = xrLooksLikeHeadset(session ?? renderer.xr.getSession?.());
-  if (headset){
-    pMat.uniforms.uSize.value = POINT_SIZE_XR_HEADSET;
-  } else {
-    // XR en móvil (AR handheld) → agranda fuerte
-    pMat.uniforms.uSize.value = isProbablyMobile ? POINT_SIZE_XR_MOBILE : POINT_SIZE_XR_HEADSET;
-  }
-}
-
 const pMat = new THREE.ShaderMaterial({
-  transparent: true,
-  depthWrite: false,
-  depthTest: false,
-  blending: THREE.AdditiveBlending,
-  uniforms: {
-    uMap: { value: spriteTex },
-    uSize: { value: POINT_SIZE_XR_HEADSET }
+  transparent:true,
+  depthWrite:false,
+  blending:THREE.AdditiveBlending,
+  vertexColors:true,
+  uniforms:{
+    uPointSize:{ value: 3.0 },
+    uDPR:{ value: Math.min(devicePixelRatio, 2) }
   },
-  vertexShader: `
-    attribute vec3 color;
+  vertexShader:`
+    uniform float uPointSize;
+    uniform float uDPR;
     attribute float aAlpha;
     varying vec3 vColor;
     varying float vAlpha;
-    uniform float uSize;
     void main(){
       vColor = color;
       vAlpha = aAlpha;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mvPosition;
-
-      float dist = -mvPosition.z;
-
-      // tamaño ~ 1/dist, pero con mínimo (para evitar micro en XR)
-      float s = uSize * (1.0 / max(0.18, dist));
-      gl_PointSize = max(3.0, s);
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = uPointSize * uDPR * (1.0 / max(0.2, -mv.z));
+      gl_Position = projectionMatrix * mv;
     }
   `,
-  fragmentShader: `
-    uniform sampler2D uMap;
+  fragmentShader:`
     varying vec3 vColor;
     varying float vAlpha;
     void main(){
-      vec4 tex = texture2D(uMap, gl_PointCoord);
-      float a = tex.a * vAlpha;
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = dot(uv, uv);
+      float a = smoothstep(0.25, 0.0, d) * vAlpha;
       if (a < 0.02) discard;
-      vec3 col = vColor * tex.a;
-      gl_FragColor = vec4(col, a);
+      gl_FragColor = vec4(vColor, a);
     }
   `
 });
 
-const points = new THREE.Points(pGeom, pMat);
-points.frustumCulled = false;
-points.renderOrder = 999;
-scene.add(points);
+const pPoints = new THREE.Points(pGeom, pMat);
+scene.add(pPoints);
 
-// sprite cometa
-const cometMat = new THREE.SpriteMaterial({
-  map: spriteTex,
-  transparent: true,
-  depthWrite: false,
-  depthTest: false,
-  blending: THREE.AdditiveBlending,
-  opacity: 0.0
-});
-const cometSprite = new THREE.Sprite(cometMat);
-cometSprite.visible = false;
-cometSprite.renderOrder = 1000;
-scene.add(cometSprite);
+// ===== Ajuste automático tamaño partículas (móvil vs visor) =====
+function isProbablyMobileSession(session){
+  if (!session) return false;
+  for (const src of session.inputSources){
+    if (src.gamepad) return false;
+  }
+  return true;
+}
+function applyParticlePointSize(session){
+  const mobile = isProbablyMobileSession(session);
+  pMat.uniforms.uPointSize.value = mobile ? 5.5 : 3.0;
+}
 
-// temp vectors
-let pCursor = 0;
+// ===== Spawn helpers =====
 const tmpSpawn = new THREE.Vector3();
-const tmpTarget = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
-const tmpPos = new THREE.Vector3();
-const tmpCamDir   = new THREE.Vector3();
-const tmpCamUp    = new THREE.Vector3();
-const tmpCamRight = new THREE.Vector3();
-const tmpViewerPos = new THREE.Vector3();
 const tmpViewerEnd = new THREE.Vector3();
-const tmpLocal = new THREE.Vector3();
+const viewerPos = new THREE.Vector3();
 
-let cometTrailAcc = 0;
-let cometInited = false;
-const cometPos = new THREE.Vector3();
-const cometPrev = new THREE.Vector3();
-const cometDir  = new THREE.Vector3();
-
-// util
-function pickTarget(isRight){ return isRight ? cornerTR : cornerTL; }
-function pickMobileSpawn(isRight){ return isRight ? cornerBR : cornerBL; }
-function smoothstep01(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3 - 2*x); }
-
-// ==================== VIEWER POS ====================
-function randomViewerWorldPos(out, zNear, zFar, xMax, yMax){
-  const camPos = camera.getWorldPosition(tmpPos);
-  camera.getWorldDirection(tmpCamDir).normalize();
-  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
-  tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
-
-  const z = zNear + Math.random() * (zFar - zNear);
-  const x = (Math.random()*2 - 1) * xMax;
-  const y = (Math.random()*2 - 1) * yMax;
-
-  out.copy(camPos)
-    .addScaledVector(tmpCamDir, z)
-    .addScaledVector(tmpCamRight, x)
-    .addScaledVector(tmpCamUp, y);
-
-  return out;
+function pickMobileSpawn(isRight){
+  return isRight ? cornerBR : cornerBL;
 }
 
-function randomNearViewerTarget(out){
-  return randomViewerWorldPos(
-    out,
-    TITLE_TO_VIEWER_Z_NEAR,
-    TITLE_TO_VIEWER_Z_FAR,
-    TITLE_TO_VIEWER_X_MAX,
-    TITLE_TO_VIEWER_Y_MAX
-  );
-}
-
-// spawn midi particles
-function spawnParticlesFrom(worldPos, warm, isRightSide){
-  const t = pickTarget(isRightSide);
-
+function spawnParticlesFrom(worldPos, speedScale, isRight){
   for (let k=0;k<P_SPAWN;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
 
-    alive[i] = P_LIFE;
-    maxLife[i] = P_LIFE;
-    attractMul[i] = 1.0;
+    alive[i] = 1;
+    life[i] = P_LIFE * (0.65 + Math.random()*0.7);
 
-    const sx = worldPos.x + (Math.random()-0.5)*0.04;
-    const sy = worldPos.y + (Math.random()-0.5)*0.04;
-    const sz = worldPos.z + (Math.random()-0.5)*0.04;
-
-    positions[i*3+0] = sx;
-    positions[i*3+1] = sy;
-    positions[i*3+2] = sz;
-
-    let vx = (Math.random()-0.5)*0.07;
-    let vy = 0.34 + Math.random()*0.18;
-    let vz = (Math.random()-0.5)*0.07;
-
-    tmpSpawn.set(sx, sy, sz);
-    tmpDir.copy(t).sub(tmpSpawn).normalize();
-    vx += tmpDir.x * TARGET_BIAS_PUSH;
-    vy += tmpDir.y * TARGET_BIAS_PUSH;
-    vz += tmpDir.z * TARGET_BIAS_PUSH;
-
-    velocity[i*3+0] = vx;
-    velocity[i*3+1] = vy;
-    velocity[i*3+2] = vz;
-
-    targetX[i] = t.x;
-    targetY[i] = t.y;
-    targetZ[i] = t.z;
-
-    const b = 0.75 + warm*0.25;
-    colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.55 + 0.35*Math.random()) * b;
-    colors[i*3+2] = (0.12 + 0.14*Math.random()) * b;
-
-    alphas[i] = 1.0;
-  }
-
-  pGeom.attributes.position.needsUpdate = true;
-  pGeom.attributes.color.needsUpdate = true;
-  pGeom.attributes.aAlpha.needsUpdate = true;
-}
-
-// spawn title particles
-function spawnTitleParticlesAt(worldPos, warm){
-  const COUNT = 2;
-
-  for (let k=0;k<COUNT;k++){
-    const i = pCursor;
-    pCursor = (pCursor + 1) % MAX_PARTICLES;
-
-    alive[i] = TITLE_PARTICLE_LIFE;
-    maxLife[i] = TITLE_PARTICLE_LIFE;
-    attractMul[i] = TITLE_TO_VIEWER_ATTR_MUL;
-
-    const sx = worldPos.x + (Math.random()-0.5)*0.05;
-    const sy = worldPos.y + (Math.random()-0.5)*0.05;
-    const sz = worldPos.z + (Math.random()-0.5)*0.05;
+    const sx = worldPos.x + (Math.random()-0.5)*0.02;
+    const sy = worldPos.y + (Math.random()-0.5)*0.02;
+    const sz = worldPos.z + (Math.random()-0.5)*0.02;
 
     positions[i*3+0] = sx;
     positions[i*3+1] = sy;
     positions[i*3+2] = sz;
 
-    randomNearViewerTarget(tmpTarget);
-    targetX[i] = tmpTarget.x;
-    targetY[i] = tmpTarget.y;
-    targetZ[i] = tmpTarget.z;
+    const tgt = isRight ? cornerTR : cornerTL;
 
-    let vx = (Math.random()-0.5)*0.030;
-    let vy = (Math.random()-0.5)*0.030;
-    let vz = (Math.random()-0.5)*0.030;
+    const vx = (tgt.x - sx) * TARGET_ATTRACT + (Math.random()-0.5)*0.10;
+    const vy = (tgt.y - sy) * TARGET_ATTRACT + (Math.random()-0.5)*0.10;
+    const vz = (tgt.z - sz) * TARGET_ATTRACT + (Math.random()-0.5)*0.10;
 
-    tmpDir.copy(tmpTarget).sub(tmpSpawn.set(sx,sy,sz));
-    const d = tmpDir.length();
-    if (d > 0.0001){
-      tmpDir.multiplyScalar(1.0 / d);
-      vx += tmpDir.x * TITLE_TO_VIEWER_PUSH;
-      vy += tmpDir.y * TITLE_TO_VIEWER_PUSH;
-      vz += tmpDir.z * TITLE_TO_VIEWER_PUSH;
-    }
+    velocity[i*3+0] = vx * speedScale;
+    velocity[i*3+1] = vy * speedScale;
+    velocity[i*3+2] = vz * speedScale;
 
-    velocity[i*3+0] = vx;
-    velocity[i*3+1] = vy;
-    velocity[i*3+2] = vz;
+    targetX[i] = tgt.x;
+    targetY[i] = tgt.y;
+    targetZ[i] = tgt.z;
 
-    const b = 0.75 + warm*0.25;
-    colors[i*3+0] = 1.0 * b;
-    colors[i*3+1] = (0.55 + 0.20*Math.random()) * b;
-    colors[i*3+2] = (0.08 + 0.10*Math.random()) * b;
+    const warm = isRight ? 1.0 : 0.92;
+    colors[i*3+0] = 1.0 * warm;
+    colors[i*3+1] = (0.70 + 0.20*Math.random()) * warm;
+    colors[i*3+2] = (0.25 + 0.15*Math.random()) * warm;
 
     alphas[i] = 1.0;
   }
@@ -1038,177 +600,391 @@ function spawnTitleParticlesAt(worldPos, warm){
 }
 
 function updateParticles(dt){
+  const drag = Math.exp(-dt*0.85);
+  const pull = 1.0 - Math.exp(-dt*1.6);
+
   for (let i=0;i<MAX_PARTICLES;i++){
-    if (alive[i] <= 0) continue;
+    if (!alive[i]) continue;
 
-    alive[i] -= dt;
-
-    const ml = Math.max(0.001, maxLife[i]);
-    const a = Math.max(0, alive[i] / ml);
-    const fade = a * a;
-    alphas[i] = fade;
-
-    if (attractMul[i] > 0.0001){
-      tmpPos.set(positions[i*3+0], positions[i*3+1], positions[i*3+2]);
-      tmpTarget.set(targetX[i], targetY[i], targetZ[i]);
-      tmpDir.copy(tmpTarget).sub(tmpPos);
-
-      const dist = tmpDir.length();
-      if (dist > 0.001){
-        tmpDir.multiplyScalar(1.0 / dist);
-        const pull = TARGET_ATTRACT * attractMul[i] * dt;
-        velocity[i*3+0] += tmpDir.x * pull;
-        velocity[i*3+1] += tmpDir.y * pull;
-        velocity[i*3+2] += tmpDir.z * pull;
-      }
-    }
-
-    positions[i*3+0] += velocity[i*3+0] * dt * PARTICLE_SPEED;
-    positions[i*3+1] += velocity[i*3+1] * dt * PARTICLE_SPEED;
-    positions[i*3+2] += velocity[i*3+2] * dt * PARTICLE_SPEED;
-
-    velocity[i*3+0] *= (1 - dt*1.05);
-    velocity[i*3+1] *= (1 - dt*0.55);
-    velocity[i*3+2] *= (1 - dt*1.05);
-
-    if (alive[i] <= 0){
-      positions[i*3+1] = -999;
+    life[i] -= dt;
+    if (life[i] <= 0){
+      alive[i] = 0;
       alphas[i] = 0;
+      continue;
     }
+
+    const idx = i*3;
+
+    const px = positions[idx+0];
+    const py = positions[idx+1];
+    const pz = positions[idx+2];
+
+    let vx = velocity[idx+0] * drag;
+    let vy = velocity[idx+1] * drag;
+    let vz = velocity[idx+2] * drag;
+
+    const dx = targetX[i] - px;
+    const dy = targetY[i] - py;
+    const dz = targetZ[i] - pz;
+
+    vx += dx * pull * 0.14;
+    vy += dy * pull * 0.14;
+    vz += dz * pull * 0.14;
+
+    positions[idx+0] = px + vx * dt;
+    positions[idx+1] = py + vy * dt;
+    positions[idx+2] = pz + vz * dt;
+
+    velocity[idx+0] = vx;
+    velocity[idx+1] = vy;
+    velocity[idx+2] = vz;
+
+    const t = clamp(life[i] / P_LIFE, 0, 1);
+    alphas[i] = t * t;
   }
+
   pGeom.attributes.position.needsUpdate = true;
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+// ==================== MAPEO CONTROLLER GRIP (PARTICULAS DESDE MANDOS) ====================
+let controllerRightObj = null;
+let controllerLeftObj  = null;
+
+function mapGrips(session){
+  controllerRightObj = null;
+  controllerLeftObj = null;
+
+  for (const src of session.inputSources){
+    if (!src.gripSpace) continue;
+    const g = renderer.xr.getControllerGrip ? renderer.xr.getControllerGrip(src) : null;
+    if (!g) continue;
+
+    if (src.handedness === "right") controllerRightObj = g;
+    if (src.handedness === "left")  controllerLeftObj  = g;
+
+    if (!scene.children.includes(g)) scene.add(g);
+  }
+}
+
+// ==================== PARTICULAS DEL TITULO (extra) ====================
+function spawnTitleParticles(){
+  updateVideoCornersWorld();
+  for (let j=0;j<18;j++){
+    const r = Math.random();
+    const sp = (Math.random()*0.7 + 0.35);
+    const pos = new THREE.Vector3(
+      lerp(cornerBL.x, cornerBR.x, r),
+      lerp(cornerBL.y, cornerTL.y, 0.12 + Math.random()*0.12),
+      lerp(cornerBL.z, cornerTR.z, 0.0)
+    );
+    spawnParticlesFrom(pos, sp, Math.random()>0.5);
+  }
+}
+
+// ==================== PARTICULAS "IZQUIERDA -> ESPECTADOR" ====================
 function spawnLeftViewerParticles(){
-  if (!LEFT_VIEWER_PARTICLES) return;
-  if (Math.random() > LEFT_VIEWER_SPAWN_PROB) return;
+  updateVideoCornersWorld();
 
-  for (let s=0; s<LEFT_VIEWER_SPAWNS_PER_HIT; s++){
-    randomViewerWorldPos(tmpViewerPos, VIEWER_Z_NEAR, VIEWER_Z_FAR, VIEWER_X_MAX, VIEWER_Y_MAX);
-    spawnParticlesFrom(tmpViewerPos, 0.90, false);
-  }
-}
+  camera.getWorldPosition(viewerPos);
+  tmpViewerEnd.copy(viewerPos).add(new THREE.Vector3(0,0,0.2));
 
-function updateTitleParticles(t, dt){
-  if (TITLE_PARTICLE_RATE <= 0) return;
-  if (t < TITLE_PARTICLES_START || t > TITLE_PARTICLES_END) return;
-
-  titleAcc += dt * TITLE_PARTICLE_RATE;
-  const n = Math.floor(titleAcc);
-  if (n <= 0) return;
-  titleAcc -= n;
-
-  for (let i=0;i<n;i++){
-    randomViewerWorldPos(tmpViewerPos, TITLE_Z_NEAR, TITLE_Z_FAR, TITLE_X_MAX, TITLE_Y_MAX);
-    spawnTitleParticlesAt(tmpViewerPos, TITLE_PARTICLE_WARM);
-  }
-}
-
-// ==================== COMETA: PERÍMETRO REDONDEADO REAL ====================
-function roundedRectPerimeterPoint(u, outWorld){
-  u = ((u % 1) + 1) % 1;
-
-  const hw = outerW * 0.5;
-  const hh = outerH * 0.5;
-  const r  = Math.min(radius, hw - 0.001, hh - 0.001);
-
-  const topLen  = (outerW - 2*r);
-  const sideLen = (outerH - 2*r);
-  const arcLen  = (Math.PI * 0.5) * r;
-
-  const total = 2*topLen + 2*sideLen + 4*arcLen;
-  let s = u * total;
-
-  const setLocalToWorld = (x,y)=>{
-    tmpLocal.set(x, y, zFront);
-    outWorld.copy(tmpLocal);
-    frameGroup.localToWorld(outWorld);
-    return outWorld;
-  };
-
-  if (s <= topLen){
-    const x = (-hw + r) + (s / topLen) * topLen;
-    return setLocalToWorld(x, +hh);
-  }
-  s -= topLen;
-
-  if (s <= arcLen){
-    const a = (Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
-    const cx = (hw - r), cy = (hh - r);
-    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
-  }
-  s -= arcLen;
-
-  if (s <= sideLen){
-    const y = (+hh - r) - (s / sideLen) * sideLen;
-    return setLocalToWorld(+hw, y);
-  }
-  s -= sideLen;
-
-  if (s <= arcLen){
-    const a = 0 - (s / arcLen) * (Math.PI*0.5);
-    const cx = (hw - r), cy = (-hh + r);
-    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
-  }
-  s -= arcLen;
-
-  if (s <= topLen){
-    const x = (+hw - r) - (s / topLen) * topLen;
-    return setLocalToWorld(x, -hh);
-  }
-  s -= topLen;
-
-  if (s <= arcLen){
-    const a = (-Math.PI*0.5) - (s / arcLen) * (Math.PI*0.5);
-    const cx = (-hw + r), cy = (-hh + r);
-    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
-  }
-  s -= arcLen;
-
-  if (s <= sideLen){
-    const y = (-hh + r) + (s / sideLen) * sideLen;
-    return setLocalToWorld(-hw, y);
-  }
-  s -= sideLen;
-
-  {
-    const a = (-Math.PI) - (s / arcLen) * (Math.PI*0.5);
-    const cx = (-hw + r), cy = (hh - r);
-    return setLocalToWorld(cx + Math.cos(a)*r, cy + Math.sin(a)*r);
-  }
-}
-
-function viewerEndWorldPos(out){
-  const camPos = camera.getWorldPosition(tmpPos);
-  camera.getWorldDirection(tmpCamDir).normalize();
-  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
-  out.copy(camPos)
-    .addScaledVector(tmpCamDir, COMET_END_Z)
-    .addScaledVector(tmpCamUp, COMET_END_Y);
-  return out;
-}
-
-function spawnCometTrail(worldPos, dt){
-  cometTrailAcc += dt * COMET_TRAIL_RATE;
-  const n = Math.floor(cometTrailAcc);
-  if (n <= 0) return;
-  cometTrailAcc -= n;
-
-  cometDir.copy(worldPos).sub(cometPrev);
-  const len = cometDir.length();
-  if (len > 0.0001) cometDir.multiplyScalar(1 / len);
-  else cometDir.set(0, 1, 0);
-
-  viewerEndWorldPos(tmpViewerEnd);
-
-  for (let s=0; s<n; s++){
+  for (let k=0;k<7;k++){
     const i = pCursor;
     pCursor = (pCursor + 1) % MAX_PARTICLES;
 
-    alive[i] = COMET_TRAIL_LIFE;
-    maxLife[i] = COMET_TRAIL_LIFE;
-    attractMul[i] = COMET_ATTRACT_MUL;
+    alive[i] = 1;
+    life[i] = P_LIFE * (0.45 + Math.random()*0.55);
+
+    const src = cornerTL;
+    const sx = src.x + (Math.random()-0.5)*0.02;
+    const sy = src.y + (Math.random()-0.5)*0.02;
+    const sz = src.z + (Math.random()-0.5)*0.02;
+
+    positions[i*3+0] = sx;
+    positions[i*3+1] = sy;
+    positions[i*3+2] = sz;
+
+    tmpDir.copy(tmpViewerEnd).sub(tmpSpawn.set(sx,sy,sz));
+    const d = tmpDir.length();
+    if (d > 0.0001) tmpDir.multiplyScalar(1 / d);
+
+    velocity[i*3+0] = tmpDir.x * 0.45 + (Math.random()-0.5)*0.05;
+    velocity[i*3+1] = tmpDir.y * 0.45 + (Math.random()-0.5)*0.05;
+    velocity[i*3+2] = tmpDir.z * 0.45 + (Math.random()-0.5)*0.05;
+
+    targetX[i] = tmpViewerEnd.x;
+    targetY[i] = tmpViewerEnd.y;
+    targetZ[i] = tmpViewerEnd.z;
+
+    colors[i*3+0] = 1.0;
+    colors[i*3+1] = 0.85 + Math.random()*0.1;
+    colors[i*3+2] = 0.25 + Math.random()*0.1;
+
+    alphas[i] = 1.0;
+  }
+
+  pGeom.attributes.position.needsUpdate = true;
+  pGeom.attributes.color.needsUpdate = true;
+  pGeom.attributes.aAlpha.needsUpdate = true;
+}
+
+// ==================== MIDI PARSER ====================
+async function loadMidiTimes(url){
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("fetch MIDI " + res.status);
+  const buf = await res.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let p = 0;
+
+  function readStr(n){
+    const s = String.fromCharCode(...bytes.slice(p,p+n));
+    p += n; return s;
+  }
+  function u32(){
+    const v = (bytes[p]<<24) | (bytes[p+1]<<16) | (bytes[p+2]<<8) | bytes[p+3];
+    p += 4; return v >>> 0;
+  }
+  function u16(){
+    const v = (bytes[p]<<8) | bytes[p+1];
+    p += 2; return v;
+  }
+  function readVar(){
+    let v=0;
+    while(true){
+      const b = bytes[p++];
+      v = (v<<7) | (b & 0x7f);
+      if (!(b & 0x80)) break;
+    }
+    return v;
+  }
+
+  const head = readStr(4);
+  if (head !== "MThd") throw new Error("MIDI header");
+  const headLen = u32();
+  const format = u16();
+  const ntrks = u16();
+  const division = u16();
+  p += (headLen - 6);
+
+  const ticksPerBeat = division & 0x7fff;
+
+  let tempo = 500000;
+  const noteOns = [];
+
+  for (let tr=0; tr<ntrks; tr++){
+    const tag = readStr(4);
+    if (tag !== "MTrk") throw new Error("MTrk missing");
+    const len = u32();
+    const end = p + len;
+
+    let tick = 0;
+    let running = 0;
+
+    while (p < end){
+      const dt = readVar();
+      tick += dt;
+
+      let status = bytes[p];
+      if (status < 0x80){
+        status = running;
+      } else {
+        p++;
+        running = status;
+      }
+
+      if (status === 0xFF){
+        const type = bytes[p++];
+
+        const l = readVar();
+        if (type === 0x51 && l === 3){
+          tempo = (bytes[p]<<16) | (bytes[p+1]<<8) | bytes[p+2];
+        }
+        p += l;
+        continue;
+      }
+
+      const typeHi = status & 0xF0;
+      const ch = status & 0x0F;
+
+      if (typeHi === 0x90){
+        const note = bytes[p++]; 
+        const vel  = bytes[p++];
+        if (vel > 0){
+          noteOns.push({ tick, tempo, ticksPerBeat });
+        }
+      } else if (typeHi === 0x80){
+        p += 2;
+      } else if (typeHi === 0xA0 || typeHi === 0xB0 || typeHi === 0xE0){
+        p += 2;
+      } else if (typeHi === 0xC0 || typeHi === 0xD0){
+        p += 1;
+      } else {
+        p += 1;
+      }
+    }
+  }
+
+  const times = [];
+  let lastTick = 0;
+  let sec = 0;
+  let curTempo = 500000;
+
+  noteOns.sort((a,b)=>a.tick - b.tick);
+  for (const ev of noteOns){
+    const dtTicks = ev.tick - lastTick;
+    const beatDur = curTempo / 1e6;
+    const dtSec = (dtTicks / ticksPerBeat) * beatDur;
+    sec += dtSec;
+
+    curTempo = ev.tempo;
+    lastTick = ev.tick;
+
+    times.push(sec);
+  }
+
+  return times;
+}
+
+// ==================== COMETA INTRO (0-14s) ====================
+const INTRO_NO_MIDI_SECONDS = 14.0;
+const COMET_ENABLED = true;
+
+const COMET_TURNS = 1.0;
+
+const COMET_SPRITE_SCALE = 0.045;
+
+const COMET_TRAIL_SPAWN_PER_SEC = 220;
+const COMET_TRAIL_WARM = 1.0;
+const COMET_TO_VIEWER_PUSH = 0.14;
+
+let cometPrev = new THREE.Vector3();
+let cometPos  = new THREE.Vector3();
+let cometDir  = new THREE.Vector3();
+let cometCarry = 0;
+let cometInited = false;
+
+const cometCanvas = document.createElement("canvas");
+cometCanvas.width = 128; cometCanvas.height = 128;
+const cctx = cometCanvas.getContext("2d");
+cctx.clearRect(0,0,128,128);
+{
+  const grd = cctx.createRadialGradient(64,64,4, 64,64,56);
+  grd.addColorStop(0.0, "rgba(255,245,235,1.0)");
+  grd.addColorStop(0.3, "rgba(255,214,100,0.95)");
+  grd.addColorStop(0.7, "rgba(255,140,60,0.45)");
+  grd.addColorStop(1.0, "rgba(120,55,20,0.0)");
+  cctx.fillStyle = grd;
+  cctx.beginPath();
+  cctx.arc(64,64,56,0,Math.PI*2);
+  cctx.fill();
+}
+const cometTex = new THREE.CanvasTexture(cometCanvas);
+cometTex.colorSpace = THREE.SRGBColorSpace;
+
+const cometMat = new THREE.SpriteMaterial({ map: cometTex, transparent:true, opacity:0.0, depthWrite:false });
+const cometSprite = new THREE.Sprite(cometMat);
+cometSprite.scale.setScalar(COMET_SPRITE_SCALE);
+cometSprite.position.copy(screen.position);
+scene.add(cometSprite);
+
+function smoothstep01(x){
+  x = clamp(x,0,1);
+  return x*x*(3-2*x);
+}
+
+function roundedRectPerimeterPoint(u, out){
+  const W = outerW;
+  const H = outerH;
+  const R = radius;
+
+  const straightW = Math.max(0.0001, W - 2*R);
+  const straightH = Math.max(0.0001, H - 2*R);
+  const arc = Math.PI*R/2;
+
+  const per = 2*(straightW + straightH) + 4*arc;
+
+  let d = (u % 1) * per;
+
+  const seg = [
+    {len: straightW, type:"top"},
+    {len: arc,      type:"tr"},
+    {len: straightH, type:"right"},
+    {len: arc,      type:"br"},
+    {len: straightW, type:"bottom"},
+    {len: arc,      type:"bl"},
+    {len: straightH, type:"left"},
+    {len: arc,      type:"tl"},
+  ];
+
+  let x = 0, y = 0;
+  for (const s of seg){
+    if (d > s.len){ d -= s.len; continue; }
+
+    if (s.type === "top"){
+      x = -W/2 + R + d;
+      y =  H/2;
+    } else if (s.type === "right"){
+      x =  W/2;
+      y =  H/2 - R - d;
+    } else if (s.type === "bottom"){
+      x =  W/2 - R - d;
+      y = -H/2;
+    } else if (s.type === "left"){
+      x = -W/2;
+      y = -H/2 + R + d;
+    } else {
+      const t = d / arc;
+      const a = t * (Math.PI/2);
+
+      if (s.type === "tr"){
+        const cx = W/2 - R;
+        const cy = H/2 - R;
+        x = cx + Math.cos(-a) * R;
+        y = cy + Math.sin(-a) * R;
+      } else if (s.type === "br"){
+        const cx = W/2 - R;
+        const cy = -H/2 + R;
+        x = cx + Math.cos(-Math.PI/2 - a) * R;
+        y = cy + Math.sin(-Math.PI/2 - a) * R;
+      } else if (s.type === "bl"){
+        const cx = -W/2 + R;
+        const cy = -H/2 + R;
+        x = cx + Math.cos(-Math.PI - a) * R;
+        y = cy + Math.sin(-Math.PI - a) * R;
+      } else if (s.type === "tl"){
+        const cx = -W/2 + R;
+        const cy = H/2 - R;
+        x = cx + Math.cos(-3*Math.PI/2 - a) * R;
+        y = cy + Math.sin(-3*Math.PI/2 - a) * R;
+      }
+    }
+    break;
+  }
+
+  out.set(x, y, zFront + 0.006);
+  frameGroup.localToWorld(out);
+}
+
+function spawnCometTrail(worldPos, dt){
+  camera.getWorldPosition(viewerPos);
+  tmpViewerEnd.copy(viewerPos).add(new THREE.Vector3(0,0,0.15));
+
+  cometDir.copy(worldPos).sub(cometPrev);
+  const d = cometDir.length();
+  if (d > 0.00001) cometDir.multiplyScalar(1/d);
+  else cometDir.set(0,0,-1);
+
+  const want = COMET_TRAIL_SPAWN_PER_SEC * dt + cometCarry;
+  const n = Math.floor(want);
+  cometCarry = want - n;
+
+  for (let k=0;k<n;k++){
+    const i = pCursor;
+    pCursor = (pCursor + 1) % MAX_PARTICLES;
+
+    alive[i] = 1;
+    life[i] = 1.3 + Math.random()*1.6;
 
     const sx = worldPos.x + (Math.random()-0.5)*0.024;
     const sy = worldPos.y + (Math.random()-0.5)*0.024;
@@ -1355,6 +1131,11 @@ function tickHand(times, which, videoTime, midiTime){
           if (controllerRightObj){
             controllerRightObj.getWorldPosition(tmpSpawn);
             spawnParticlesFrom(tmpSpawn, 0.55, true);
+
+            // ✅ También desde las esquinas inferiores del vídeo en AR (no solo en móvil)
+            if (currentXRMode === "immersive-ar"){
+              spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
+            }
           } else {
             spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           }
@@ -1379,6 +1160,11 @@ function tickHand(times, which, videoTime, midiTime){
           if (controllerLeftObj){
             controllerLeftObj.getWorldPosition(tmpSpawn);
             spawnParticlesFrom(tmpSpawn, 0.90, false);
+
+            // ✅ También desde las esquinas inferiores del vídeo en AR (no solo en móvil)
+            if (currentXRMode === "immersive-ar"){
+              spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
+            }
           } else {
             spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           }
@@ -1411,7 +1197,25 @@ function tickHaptics(videoTime){
   if (midiTimeL >= 0) tickHand(leftTimes,  "L", videoTime, midiTimeL);
 }
 
+// ==================== TITLE LIFE ANIM ====================
+let titlePhase = 0;
+function stepType(dt){
+  titlePhase += dt;
+}
+
+// ==================== PARTICULAS INICIALES DEL TITULO (opcional anim) ====================
+function updateTitleParticles(t, dt){
+  // placeholder: ya se generan al mostrar texto
+}
+
+// ==================== TITLE "LIVES" UPDATE (opcional) ====================
+function updateTitleLives(dt){
+  // placeholder
+}
+
 // ==================== RENDER LOOP ====================
+let prevVideoT = 0;
+
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
 
@@ -1450,11 +1254,16 @@ const btnStart = document.getElementById("start");
 const btnAR = document.getElementById("enterAR");
 const btnVR = document.getElementById("enterVR");
 
+// Modo XR actual ("immersive-ar" / "immersive-vr" / null)
+let currentXRMode = null;
+
 async function enter(mode){
   const s = await navigator.xr.requestSession(mode,{
     optionalFeatures:["local-floor","bounded-floor","hand-tracking"]
   });
   renderer.xr.setSession(s);
+
+  currentXRMode = mode;
 
   // ✅ aplica tamaño correcto según tipo de XR (móvil vs visor)
   applyParticlePointSize(s);
@@ -1473,6 +1282,7 @@ async function enter(mode){
   s.addEventListener("end", () => {
     overlay.style.display = "grid";
     applyParticlePointSize(null);
+    currentXRMode = null;
   });
 
   overlay.style.display = "none";
