@@ -1255,15 +1255,49 @@ function spawnCometTrail(worldPos, dt){
   pGeom.attributes.aAlpha.needsUpdate = true;
 }
 
+
 function updateCometIntro(t, dt){
   if (!COMET_ENABLED) return;
-
   if (t >= INTRO_NO_MIDI_SECONDS){
     cometSprite.visible = false;
     cometMat.opacity = 0.0;
     cometInited = false;
     return;
   }
+
+  cometSprite.visible = true;
+
+  const p = Math.max(0, Math.min(1, t / INTRO_NO_MIDI_SECONDS));
+  const fadeIn  = smoothstep01(p / 0.10);
+  const fadeOut = 1.0 - smoothstep01((p - 0.92) / 0.08);
+  cometMat.opacity = 0.95 * fadeIn * fadeOut;
+
+  // Zig-zag motion in front of viewer
+  camera.getWorldPosition(tmpPos);
+  camera.getWorldDirection(tmpCamDir).normalize();
+  tmpCamUp.set(0,1,0).applyQuaternion(camera.quaternion).normalize();
+  tmpCamRight.copy(tmpCamDir).cross(tmpCamUp).normalize();
+
+  const z = 0.6 + 0.4*Math.sin(t*1.7);
+  const x = 0.4*Math.sin(t*2.3);
+  const y = 0.25*Math.sin(t*3.1);
+
+  cometPos.copy(tmpPos)
+    .addScaledVector(tmpCamDir, z)
+    .addScaledVector(tmpCamRight, x)
+    .addScaledVector(tmpCamUp, y);
+
+  cometSprite.position.copy(cometPos);
+  const pulse = 0.80 + 0.20*Math.sin(t * 6.8);
+  cometSprite.scale.setScalar(COMET_SPRITE_SCALE * pulse);
+
+  if (!cometInited){
+    cometPrev.copy(cometPos);
+    cometInited = true;
+  }
+  spawnCometTrail(cometPos, dt);
+  cometPrev.copy(cometPos);
+}
 
   cometSprite.visible = true;
 
