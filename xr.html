@@ -202,12 +202,14 @@ const cornerBL = new THREE.Vector3();
 const cornerBR = new THREE.Vector3();
 
 function updateVideoCornersWorld(){
+  screen.updateMatrixWorld(true);
   cornerTL.set(-screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTL);
   cornerTR.set( screenW/2,  screenH/2, 0.0001); screen.localToWorld(cornerTR);
   cornerBL.set(-screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBL);
   cornerBR.set( screenW/2, -screenH/2, 0.0001); screen.localToWorld(cornerBR);
 }
-updateVideoCornersWorld();
+scene.updateMatrixWorld(true);
+  updateVideoCornersWorld();
 
 // ==================== MARCO REDONDEADO GRADIENTE ====================
 const frameGroup = new THREE.Group();
@@ -1358,6 +1360,8 @@ function tickHand(times, which, videoTime, midiTime){
           } else {
             spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
           }
+          // also spawn from corner
+          spawnParticlesFrom(pickMobileSpawn(true), 0.55, true);
         }
         rightIdx++;
         continue;
@@ -1382,6 +1386,8 @@ function tickHand(times, which, videoTime, midiTime){
           } else {
             spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
           }
+          // also spawn from corner
+          spawnParticlesFrom(pickMobileSpawn(false), 0.90, false);
 
           spawnLeftViewerParticles();
         }
@@ -1415,6 +1421,7 @@ function tickHaptics(videoTime){
 renderer.setAnimationLoop(()=>{
   if (video.readyState >= 2) videoTex.needsUpdate = true;
 
+  scene.updateMatrixWorld(true);
   updateVideoCornersWorld();
 
   const t = video.currentTime;
