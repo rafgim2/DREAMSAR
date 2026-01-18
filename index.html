@@ -886,6 +886,12 @@ cometSprite.visible = false;
 cometSprite.renderOrder = 1000;
 scene.add(cometSprite);
 
+// ✅ Evita que en móvil se vea el primer frame del vídeo (pausado) detrás del overlay
+screen.visible = false;
+frameGroup.visible = false;
+points.visible = false;      // opcional: partículas
+cometSprite.visible = false; // opcional: cometa
+
 // temp vectors
 let pCursor = 0;
 const tmpSpawn = new THREE.Vector3();
@@ -1520,6 +1526,11 @@ btnStart.onclick = async () => {
     video.volume = 1.0;
     await video.play();
     log("▶ Vídeo iniciado (con sonido)");
+
+// ✅ Ahora que el usuario ha iniciado, mostramos la escena
+screen.visible = true;
+frameGroup.visible = true;
+points.visible = true; // opcional: partículas
 
     try{
       log("⏳ Cargando MIDI derecha...");
