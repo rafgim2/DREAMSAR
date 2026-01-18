@@ -1,5 +1,5 @@
 // URL del vídeo (GitHub Pages, mismo directorio)
-export const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/Dreamsintitulo(4).mp4";
+export const VIDEO_URL = "https://pub-aa6ee859836d478ca4ac85eb9f71f0c3.r2.dev/Dreamsintitulo(5).mp4";
 
 // Cues (incluye título con type:"title")
 export const CUES = [
@@ -17,6 +17,7 @@ export const CUES = [
   { t: 125.0, type: "text", text: ["Cuando la noche lo cubre todo,", "ya no busco luz, busco sentido…"] },
   { t: 152.0, type: "text", text: ["Porque aceptar la oscuridad no es rendirse,", "es comprender que también forma parte de mí…"] },
 ];
+
 
 
 
