@@ -31,7 +31,7 @@
 
     header {
       text-align: center;
-      padding: 60px 20px 30px;
+      padding: 60px 20px 40px;
     }
 
     header h1 {
@@ -45,20 +45,6 @@
       font-size: 1.2rem;
       opacity: 0.85;
       line-height: 1.6;
-    }
-
-    .hero {
-      width: 90%;
-      max-width: 900px;
-      margin: 40px 0;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-    }
-
-    .hero img {
-      width: 100%;
-      display: block;
     }
 
     .experiences {
@@ -100,9 +86,13 @@
       background: url('hero.jpg') center / cover no-repeat;
     }
 
-    /* Broken Note */
+    /* Broken Note – imagen completa */
     .broken-note {
-      background: url('brokennote.png') center / cover no-repeat;
+      background-color: #0b0b0b;
+      background-image: url('brokennote.png');
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
     }
 
     footer {
@@ -122,10 +112,6 @@
       Música, texto y espacio fusionados en una forma distinta de escuchar.
     </p>
   </header>
-
-  <div class="hero">
-    <img src="hero.jpg" alt="Dreams AR" />
-  </div>
 
   <section class="experiences">
 
