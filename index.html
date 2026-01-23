@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dreams AR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Fuente -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: radial-gradient(circle at top, #1a1a1a, #000);
+      color: #f2f2f2;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      text-align: center;
+      padding: 60px 20px 30px;
+    }
+
+    header h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+    }
+
+    header p {
+      max-width: 600px;
+      font-weight: 300;
+      opacity: 0.85;
+      line-height: 1.6;
+    }
+
+    .hero {
+      width: 90%;
+      max-width: 900px;
+      margin: 40px 0;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+
+    .hero img {
+      width: 100%;
+      display: block;
+    }
+
+    .experiences {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 30px;
+      width: 90%;
+      max-width: 900px;
+      margin: 40px 0 80px;
+    }
+
+    .card {
+      position: relative;
+      background: linear-gradient(160deg, #2a2a2a, #111);
+      border-radius: 18px;
+      padding: 30px;
+      text-decoration: none;
+      color: inherit;
+      overflow: hidden;
+      transition: transform 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, transparent, rgba(255,180,80,0.15), transparent);
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 25px 50px rgba(0,0,0,0.7);
+    }
+
+    .card:hover::before {
+      opacity: 1;
+    }
+
+    .card h2 {
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .card p {
+      font-size: 0.95rem;
+      font-weight: 300;
+      opacity: 0.8;
+      line-height: 1.5;
+    }
+
+    footer {
+      opacity: 0.4;
+      font-size: 0.8rem;
+      padding-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>DREAMS AR</h1>
+    <p>
+      Experiencias de piano en realidad aumentada.
+      Música, texto y espacio fusionados en una forma distinta de escuchar.
+    </p>
+  </header>
+
+  <div class="hero">
+    <!-- Sustituye la imagen cuando quieras -->
+    <img src="hero.jpg" alt="Dreams AR - Experiencia inmersiva" />
+  </div>
+
+  <section class="experiences">
+
+    <a class="card" href="dream14/index.html">
+      <h2>Dream nº14</h2>
+      <p>
+        Una experiencia AR donde piano, texto y tiempo se superponen
+        creando una atmósfera hipnótica y emocional.
+      </p>
+    </a>
+
+    <a class="card" href="broken-note/index.html">
+      <h2>Broken Note</h2>
+      <p>
+        Fragmentos sonoros suspendidos en el espacio.
+        Una pieza íntima sobre la fragilidad y la resonancia.
+      </p>
+    </a>
+
+  </section>
+
+  <footer>
+    © Dreams AR
+  </footer>
+
+</body>
+</html>
