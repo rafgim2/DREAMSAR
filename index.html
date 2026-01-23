@@ -37,6 +37,14 @@
     header h1 {
       font-size: 3.4rem;
       letter-spacing: 0.12em;
+      margin-bottom: 18px;
+    }
+
+    header p {
+      max-width: 600px;
+      font-size: 1.2rem;
+      opacity: 0.85;
+      line-height: 1.6;
     }
 
     .hero {
@@ -68,14 +76,8 @@
       overflow: hidden;
       min-height: 240px;
       text-decoration: none;
-      color: inherit;
       box-shadow: 0 15px 40px rgba(0,0,0,0.6);
       transition: transform 0.4s ease, box-shadow 0.4s ease;
-    }
-
-    .card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 25px 55px rgba(0,0,0,0.8);
     }
 
     .card::after {
@@ -88,28 +90,19 @@
       );
     }
 
-    .card h2 {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2.2rem;
-      letter-spacing: 0.15em;
-      z-index: 2;
-      text-align: center;
+    .card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 25px 55px rgba(0,0,0,0.8);
     }
 
-    /* Dream nº14 (imagen genérica / futura) */
+    /* Dream nº14 */
     .dream14 {
-      background: 
-        url('hero.jpg') center / cover no-repeat;
+      background: url('hero.jpg') center / cover no-repeat;
     }
 
     /* Broken Note */
     .broken-note {
-      background: 
-        url('brokennote.png') center / cover no-repeat;
+      background: url('brokennote.png') center / cover no-repeat;
     }
 
     footer {
@@ -124,6 +117,10 @@
 
   <header>
     <h1>Dreams AR</h1>
+    <p>
+      Experiencias de piano en realidad aumentada.  
+      Música, texto y espacio fusionados en una forma distinta de escuchar.
+    </p>
   </header>
 
   <div class="hero">
@@ -132,13 +129,14 @@
 
   <section class="experiences">
 
-    <a class="card dream14" href="dream14/index.html">
-      <h2>Dreams AR</h2>
-    </a>
+    <a class="card dream14" href="dream14/index.html"></a>
 
-    <a class="card broken-note" href="broken-note/index.html">
-      <h2>Dreams AR</h2>
-    </a>
+    <a
+      class="card broken-note"
+      href="https://rafgim2.github.io/BROKENNOTE"
+      target="_blank"
+      rel="noopener"
+    ></a>
 
   </section>
 
