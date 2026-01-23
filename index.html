@@ -5,10 +5,14 @@
   <title>Dreams AR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Fuente -->
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;500;700&display=swap" rel="stylesheet">
-
   <style>
+    @font-face {
+      font-family: 'PristinaAR';
+      src: url('PRISTINA.TTF') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -16,7 +20,7 @@
     }
 
     body {
-      font-family: 'Montserrat', sans-serif;
+      font-family: 'PristinaAR', serif;
       background: radial-gradient(circle at top, #1a1a1a, #000);
       color: #f2f2f2;
       min-height: 100vh;
@@ -31,17 +35,16 @@
     }
 
     header h1 {
-      font-size: 3rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      font-size: 3.4rem;
+      letter-spacing: 0.12em;
       margin-bottom: 20px;
     }
 
     header p {
       max-width: 600px;
-      font-weight: 300;
       opacity: 0.85;
       line-height: 1.6;
+      font-size: 1.2rem;
     }
 
     .hero {
@@ -75,6 +78,7 @@
       text-decoration: none;
       color: inherit;
       overflow: hidden;
+      min-height: 220px;
       transition: transform 0.4s ease, box-shadow 0.4s ease;
     }
 
@@ -82,7 +86,12 @@
       content: "";
       position: absolute;
       inset: 0;
-      background: linear-gradient(120deg, transparent, rgba(255,180,80,0.15), transparent);
+      background: linear-gradient(
+        120deg,
+        transparent,
+        rgba(255,180,80,0.18),
+        transparent
+      );
       opacity: 0;
       transition: opacity 0.4s;
     }
@@ -97,21 +106,30 @@
     }
 
     .card h2 {
-      font-size: 1.6rem;
+      font-size: 2rem;
       margin-bottom: 10px;
-      font-weight: 600;
+      position: relative;
+      z-index: 2;
     }
 
     .card p {
-      font-size: 0.95rem;
-      font-weight: 300;
-      opacity: 0.8;
+      font-size: 1.05rem;
+      opacity: 0.85;
       line-height: 1.5;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Broken Note con imagen */
+    .card.broken-note {
+      background: 
+        linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.75)),
+        url('brokennote.png') center / cover no-repeat;
     }
 
     footer {
-      opacity: 0.4;
-      font-size: 0.8rem;
+      opacity: 0.45;
+      font-size: 0.9rem;
       padding-bottom: 20px;
     }
   </style>
@@ -122,14 +140,13 @@
   <header>
     <h1>DREAMS AR</h1>
     <p>
-      Experiencias de piano en realidad aumentada.
+      Experiencias de piano en realidad aumentada.  
       Música, texto y espacio fusionados en una forma distinta de escuchar.
     </p>
   </header>
 
   <div class="hero">
-    <!-- Sustituye la imagen cuando quieras -->
-    <img src="hero.jpg" alt="Dreams AR - Experiencia inmersiva" />
+    <img src="hero.jpg" alt="Dreams AR" />
   </div>
 
   <section class="experiences">
@@ -142,7 +159,7 @@
       </p>
     </a>
 
-    <a class="card" href="broken-note/index.html">
+    <a class="card broken-note" href="broken-note/index.html">
       <h2>Broken Note</h2>
       <p>
         Fragmentos sonoros suspendidos en el espacio.
@@ -153,7 +170,7 @@
   </section>
 
   <footer>
-    © Dreams AR
+    © Rafael Gimeno
   </footer>
 
 </body>
