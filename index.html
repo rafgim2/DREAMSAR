@@ -49,18 +49,18 @@
 
     .experiences {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(260px, auto));
       gap: 30px;
       width: 90%;
       max-width: 900px;
       margin: 40px 0 80px;
+      justify-content: center;
     }
 
     .card {
       position: relative;
       border-radius: 18px;
       overflow: hidden;
-      min-height: 240px;
       text-decoration: none;
       box-shadow: 0 15px 40px rgba(0,0,0,0.6);
       transition: transform 0.4s ease, box-shadow 0.4s ease;
@@ -71,8 +71,8 @@
       position: absolute;
       inset: 0;
       background: linear-gradient(
-        rgba(0,0,0,0.25),
-        rgba(0,0,0,0.65)
+        rgba(0,0,0,0.2),
+        rgba(0,0,0,0.5)
       );
     }
 
@@ -81,18 +81,22 @@
       box-shadow: 0 25px 55px rgba(0,0,0,0.8);
     }
 
-    /* Dream nº14 */
+    /* Dream nº14 (horizontal estándar) */
     .dream14 {
+      aspect-ratio: 16 / 9;
+      width: 100%;
       background: url('hero.jpg') center / cover no-repeat;
     }
 
-    /* Broken Note – imagen completa */
+    /* Broken Note (ajustada a imagen, sin barras negras) */
     .broken-note {
-      background-color: #0b0b0b;
+      aspect-ratio: 3 / 4; /* ajusta si lo necesitas */
+      width: 100%;
       background-image: url('brokennote.png');
       background-position: center;
       background-repeat: no-repeat;
       background-size: contain;
+      background-color: transparent;
     }
 
     footer {
