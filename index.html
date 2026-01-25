@@ -13,7 +13,11 @@
       font-style: normal;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     body {
       font-family: 'PristinaAR', serif;
@@ -27,7 +31,7 @@
 
     header {
       text-align: center;
-      padding: 50px 20px 26px;
+      padding: 42px 20px 8px;
       width: 100%;
       max-width: 980px;
     }
@@ -36,23 +40,15 @@
       width: min(720px, 92vw);
       height: auto;
       display: block;
-      margin: 0 auto 22px;
-      filter: drop-shadow(0 18px 40px rgba(0,0,0,0.75));
+      margin: 0 auto 14px;
       border-radius: 18px;
-    }
-
-    header p {
-      max-width: 760px;
-      margin: 0 auto;
-      font-size: 1.8rem;
-      opacity: 0.85;
-      line-height: 1.6;
+      filter: drop-shadow(0 18px 40px rgba(0,0,0,0.75));
     }
 
     .panel {
       width: min(900px, 92vw);
-      margin: 22px 0 30px;
-      padding: 22px;
+      margin: 6px 0 22px;
+      padding: 18px 22px;
       border-radius: 18px;
       background: rgba(0,0,0,0.35);
       box-shadow: 0 15px 40px rgba(0,0,0,0.6);
@@ -60,7 +56,8 @@
     }
 
     .panel h2 {
-      font-size: 2.0rem;
+      font-size: 2rem;
+      text-align: center;
       margin-bottom: 14px;
       opacity: 0.95;
       letter-spacing: 0.03em;
@@ -70,7 +67,6 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 14px;
-      margin-top: 10px;
     }
 
     .choice {
@@ -79,10 +75,11 @@
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(0,0,0,0.55);
       padding: 18px 16px;
-      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+      transition: transform 0.25s ease,
+                  box-shadow 0.25s ease,
+                  border-color 0.25s ease,
+                  background 0.25s ease;
       user-select: none;
-      position: relative;
-      overflow: hidden;
     }
 
     .choice:hover {
@@ -102,39 +99,39 @@
       line-height: 1.1;
       margin-bottom: 6px;
       letter-spacing: 0.02em;
+      text-align: center;
     }
 
     .choice-sub {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       font-size: 0.95rem;
       opacity: 0.72;
-      line-height: 1.4;
+      text-align: center;
     }
 
     .actions {
       display: flex;
-      gap: 12px;
-      align-items: center;
       justify-content: center;
-      margin-top: 18px;
-      flex-wrap: wrap;
+      margin-top: 16px;
     }
 
     .btn {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      border: 0;
+      border: none;
       border-radius: 999px;
-      padding: 12px 18px;
+      padding: 12px 22px;
       font-size: 1rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.55);
       background: rgba(255, 200, 80, 0.95);
       color: #1a1208;
-      font-weight: 700;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.55);
+      transition: transform 0.2s ease, opacity 0.2s ease;
     }
 
-    .btn:hover { transform: translateY(-2px); }
+    .btn:hover {
+      transform: translateY(-2px);
+    }
 
     .btn:disabled {
       opacity: 0.35;
@@ -144,8 +141,8 @@
 
     .hint {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      font-size: 0.95rem;
-      opacity: 0.7;
+      font-size: 0.9rem;
+      opacity: 0.65;
       text-align: center;
       margin-top: 10px;
     }
@@ -153,8 +150,8 @@
     footer {
       opacity: 0.45;
       font-size: 0.9rem;
-      padding: 18px 0 20px;
-      margin-top: auto;
+      padding: 10px 0 16px;
+      margin-top: 12px;
     }
   </style>
 </head>
@@ -162,26 +159,21 @@
 <body>
 
   <header>
-    <!-- Imagen en el mismo directorio -->
     <img class="logo" src="DREAMSAR.png" alt="Dreams AR" />
-    <p>
-      Experiencias de piano en realidad aumentada.  
-      Selecciona una canción para acceder.
-    </p>
   </header>
 
-  <main class="panel" aria-label="Selector de experiencia">
+  <main class="panel">
     <h2>Elige tu canción</h2>
 
     <section class="choices">
-      <div class="choice" data-url="https://rafgim2.github.io/DREAMSAR/" role="button" tabindex="0" aria-label="Seleccionar Dream nº14">
+      <div class="choice" data-url="https://rafgim2.github.io/DREAMSAR/">
         <div class="choice-title">Dream nº14</div>
-        <div class="choice-sub">Entrar a la experiencia DreamsAR (Dream nº14).</div>
+        <div class="choice-sub">Entrar a la experiencia DreamsAR (Dream nº14)</div>
       </div>
 
-      <div class="choice" data-url="https://rafgim2.github.io/BROKENNOTE" role="button" tabindex="0" aria-label="Seleccionar Broken Note">
+      <div class="choice" data-url="https://rafgim2.github.io/BROKENNOTE">
         <div class="choice-title">Broken Note</div>
-        <div class="choice-sub">Entrar a la experiencia Broken Note.</div>
+        <div class="choice-sub">Entrar a la experiencia Broken Note</div>
       </div>
     </section>
 
@@ -189,7 +181,9 @@
       <button id="enterBtn" class="btn" disabled>Acceder</button>
     </div>
 
-    <div id="hint" class="hint">Selecciona una canción para habilitar el acceso.</div>
+    <div id="hint" class="hint">
+      Selecciona una canción para habilitar el acceso.
+    </div>
   </main>
 
   <footer>
@@ -197,34 +191,26 @@
   </footer>
 
   <script>
-    const choices = Array.from(document.querySelectorAll('.choice'));
+    const choices = document.querySelectorAll('.choice');
     const enterBtn = document.getElementById('enterBtn');
     const hint = document.getElementById('hint');
 
     let selectedUrl = null;
 
-    function selectChoice(choiceEl) {
-      choices.forEach(c => c.classList.remove('selected'));
-      choiceEl.classList.add('selected');
-      selectedUrl = choiceEl.dataset.url;
-      enterBtn.disabled = !selectedUrl;
-      hint.textContent = selectedUrl ? 'Listo. Pulsa "Acceder" para entrar.' : 'Selecciona una canción para habilitar el acceso.';
-    }
-
     choices.forEach(choice => {
-      choice.addEventListener('click', () => selectChoice(choice));
-      choice.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          selectChoice(choice);
-        }
+      choice.addEventListener('click', () => {
+        choices.forEach(c => c.classList.remove('selected'));
+        choice.classList.add('selected');
+        selectedUrl = choice.dataset.url;
+        enterBtn.disabled = false;
+        hint.textContent = 'Pulsa "Acceder" para entrar en la experiencia.';
       });
     });
 
     enterBtn.addEventListener('click', () => {
-      if (!selectedUrl) return;
-      // Abre en la misma pestaña; si prefieres nueva pestaña, cambia a window.open(selectedUrl, '_blank')
-      window.location.href = selectedUrl;
+      if (selectedUrl) {
+        window.location.href = selectedUrl;
+      }
     });
   </script>
 
