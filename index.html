@@ -36,11 +36,25 @@
       max-width: 980px;
     }
 
+    /* === LOGO CON BORDE DORADO === */
+    .logo-frame {
+      display: inline-block;
+      padding: 4px;
+      border-radius: 22px;
+      background: linear-gradient(
+        180deg,
+        rgba(255, 210, 120, 0.95),
+        rgba(200, 150, 60, 0.95)
+      );
+      box-shadow:
+        0 12px 30px rgba(255, 180, 80, 0.35),
+        0 0 0 1px rgba(255, 220, 160, 0.35);
+    }
+
     .logo {
       width: min(450px, 92vw);
       height: auto;
       display: block;
-      margin: 0 auto 14px;
       border-radius: 18px;
       filter: drop-shadow(0 18px 40px rgba(0,0,0,0.75));
     }
@@ -166,7 +180,9 @@
 <body>
 
   <header>
-    <img class="logo" src="DREAMSAR.png" alt="Dreams AR" />
+    <div class="logo-frame">
+      <img class="logo" src="DREAMSAR.png" alt="Dreams AR" />
+    </div>
   </header>
 
   <main class="panel">
@@ -217,3 +233,4 @@
 
 </body>
 </html>
+
