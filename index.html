@@ -9,8 +9,6 @@
     @font-face {
       font-family: 'PristinaAR';
       src: url('PRISTINA.TTF') format('truetype');
-      font-weight: normal;
-      font-style: normal;
     }
 
     * {
@@ -36,7 +34,6 @@
       max-width: 980px;
     }
 
-    /* === LOGO CON BORDE DORADO === */
     .logo-frame {
       display: inline-block;
       padding: 4px;
@@ -53,97 +50,110 @@
 
     .logo {
       width: min(450px, 92vw);
-      height: auto;
-      display: block;
       border-radius: 18px;
-      filter: drop-shadow(0 18px 40px rgba(0,0,0,0.75));
     }
 
     .panel {
-      width: min(1500px, 92vw);
-      margin: 6px 0 22px;
-      padding: 18px 22px;
+      position: relative;
+      width: min(1000px, 92vw);
+      margin: 34px 0 22px;
+      padding: 18px;
       border-radius: 18px;
-      background: rgba(0,0,0,0.35);
+      background: linear-gradient(
+        180deg,
+        rgba(0,0,0,0.06) 0%,
+        rgba(0,0,0,0.20) 18%,
+        rgba(0,0,0,0.35) 42%,
+        rgba(0,0,0,0.35) 100%
+      );
       box-shadow: 0 15px 40px rgba(0,0,0,0.6);
       backdrop-filter: blur(6px);
+      overflow: visible;
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -40px;
+      height: 55px;
+      border-radius: 30px 30px 0 0;
+      background: linear-gradient(
+        180deg,
+        rgba(255, 190, 90, 0.08) 0%,
+        rgba(0,0,0,0.12) 35%,
+        rgba(0,0,0,0) 100%
+      );
+      filter: blur(10px);
+      pointer-events: none;
     }
 
     .panel h2 {
-      font-size: 2rem;
+      font-size: 1.8rem;
       text-align: center;
-      margin-bottom: 14px;
-      margin-top: -20px;
-      opacity: 0.95;
-      letter-spacing: 0.03em;
+      margin-bottom: 12px;
     }
 
     .choices {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
     }
 
-    /* === TARJETAS DORADAS === */
     .choice {
       cursor: pointer;
-      border-radius: 16px;
+      border-radius: 12px;
       border: 1px solid rgba(255, 200, 120, 0.25);
       background: linear-gradient(
         180deg,
         rgba(90, 60, 20, 0.55),
         rgba(40, 25, 10, 0.75)
       );
-      padding: 18px 16px;
-      transition: transform 0.25s ease,
-                  box-shadow 0.25s ease,
-                  border-color 0.25s ease,
-                  background 0.25s ease;
-      user-select: none;
+      padding: 10px;
+
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+
+      text-align: center;
+      min-height: 100px;
+
+      transition: 0.25s;
     }
 
     .choice:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 18px 45px rgba(255, 180, 80, 0.25);
-      border-color: rgba(255, 200, 120, 0.55);
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(255, 180, 80, 0.25);
     }
 
     .choice.selected {
       border-color: rgba(255, 200, 80, 0.9);
-      background: linear-gradient(
-        180deg,
-        rgba(140, 95, 35, 0.75),
-        rgba(70, 45, 15, 0.85)
-      );
-      box-shadow: 0 22px 60px rgba(255, 190, 90, 0.45);
+      box-shadow: 0 15px 40px rgba(255, 190, 90, 0.45);
     }
 
     .choice-title {
-      font-size: 2.2rem;
-      line-height: 1.1;
-      margin-bottom: 6px;
-      letter-spacing: 0.02em;
-      text-align: center;
+      font-size: 1.4rem;
+      margin-bottom: 4px;
     }
 
     .choice-sub {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      font-size: 0.95rem;
-      opacity: 0.75;
-      text-align: center;
+      font-family: system-ui;
+      font-size: 0.8rem;
+      opacity: 0.7;
     }
 
     .actions {
       display: flex;
       justify-content: center;
-      margin-top: 16px;
+      margin-top: 14px;
     }
 
     .btn {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       border: none;
       border-radius: 999px;
-      padding: 12px 22px;
+      padding: 10px 18px;
       font-size: 1rem;
       font-weight: 700;
       cursor: pointer;
@@ -153,99 +163,89 @@
         rgba(200, 150, 60, 0.95)
       );
       color: #1a1208;
-      box-shadow: 0 12px 30px rgba(255, 180, 80, 0.45);
-      transition: transform 0.2s ease, opacity 0.2s ease;
-    }
-
-    .btn:hover {
-      transform: translateY(-2px);
     }
 
     .btn:disabled {
-      opacity: 0.35;
+      opacity: 0.4;
       cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
     }
 
     footer {
-      opacity: 0.45;
-      font-size: 1.4rem;
-      padding: 10px 0 16px;
-      margin-top: -15px;
+      opacity: 0.5;
+      font-size: 1.2rem;
+      padding: 10px;
     }
   </style>
 </head>
 
 <body>
 
-  <header>
-    <div class="logo-frame">
-      <img class="logo" src="DREAMSAR.png" alt="Dreams AR" />
-    </div>
-  </header>
-
-  <main class="panel">
-    <h2>Elige tu canción:</h2>
-
-    <section class="choices">
-      <div class="choice" data-url="https://rafgim2.github.io/F1MAINTHEME">
-        <div class="choice-title">F1 Main Theme</div>
-        <div class="choice-sub">Entrar en la experiencia AR</div>
-      </div>
-      <div class="choice" data-url="https://rafgim2.github.io/BAJOELMISMOCIELO">
-        <div class="choice-title">Bajo el mismo cielo</div>
-        <div class="choice-sub">Entrar en la experiencia AR</div>
-      </div>     
-      <div class="choice" data-url="https://rafgim2.github.io/Dreamn14">
-          <br>
-        <div class="choice-title">Dream nº14</div>       
-        <div class="choice-sub">Entrar en la experiencia AR</div>
-      </div>
-
-      <div class="choice" data-url="https://rafgim2.github.io/BROKENNOTE">
-        <br>
-        <div class="choice-title">Broken Note</div>
-        <div class="choice-sub">Entrar en la experiencia AR</div>
-      </div>
-      <div class="choice" data-url="https://rafgim2.github.io/Dreamn7/">
-        <br>
-    <div class="choice-title">Dream nº7</div>
-    <div class="choice-sub">Entrar en la experiencia AR</div>
+<header>
+  <div class="logo-frame">
+    <img class="logo" src="DREAMSAR.png" />
   </div>
-    </section>
+</header>
 
-    <div class="actions">
-      <button id="enterBtn" class="btn" disabled>Acceder</button>
+<main class="panel">
+  <h2>Elige tu canción:</h2>
+
+  <section class="choices">
+    <div class="choice" data-url="https://rafgim2.github.io/F1MAINTHEME">
+      <div class="choice-title">F1 Main Theme</div>
+      <div class="choice-sub">Entrar en AR</div>
     </div>
-  </main>
 
-  <footer>
-    © By Rafael Gimeno
-  </footer>
+    <div class="choice" data-url="https://rafgim2.github.io/BAJOELMISMOCIELO">
+      <div class="choice-title">Bajo el mismo cielo</div>
+      <div class="choice-sub">Entrar en AR</div>
+    </div>
 
-  <script>
-    const choices = document.querySelectorAll('.choice');
-    const enterBtn = document.getElementById('enterBtn');
+    <div class="choice" data-url="https://rafgim2.github.io/Dreamn14">
+      <div class="choice-title">Dream nº14</div>
+      <div class="choice-sub">Entrar en AR</div>
+    </div>
 
-    let selectedUrl = null;
+    <div class="choice" data-url="https://rafgim2.github.io/BROKENNOTE">
+      <div class="choice-title">Broken Note</div>
+      <div class="choice-sub">Entrar en AR</div>
+    </div>
 
-    choices.forEach(choice => {
-      choice.addEventListener('click', () => {
-        choices.forEach(c => c.classList.remove('selected'));
-        choice.classList.add('selected');
-        selectedUrl = choice.dataset.url;
-        enterBtn.disabled = false;
-      });
+    <div class="choice" data-url="https://rafgim2.github.io/Dreamn7/">
+      <div class="choice-title">Dream nº7</div>
+      <div class="choice-sub">Entrar en AR</div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button id="enterBtn" class="btn" disabled>Acceder</button>
+  </div>
+</main>
+
+<footer>
+  © By Rafael Gimeno
+</footer>
+
+<script>
+  const choices = document.querySelectorAll('.choice');
+  const enterBtn = document.getElementById('enterBtn');
+
+  let selectedUrl = null;
+
+  choices.forEach(choice => {
+    choice.addEventListener('click', () => {
+      choices.forEach(c => c.classList.remove('selected'));
+      choice.classList.add('selected');
+      selectedUrl = choice.dataset.url;
+      enterBtn.disabled = false;
     });
+  });
 
-    enterBtn.addEventListener('click', () => {
-      if (selectedUrl) {
-        window.location.href = selectedUrl;
-      }
-    });
-  </script>
+  enterBtn.addEventListener('click', () => {
+    if (selectedUrl) {
+      window.location.href = selectedUrl;
+    }
+  });
+</script>
 
 </body>
 </html>
-
